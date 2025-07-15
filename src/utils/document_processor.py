@@ -46,14 +46,48 @@ class DocumentProcessor:
             return ""
     
     def extract_text_from_pdf_bytes(self, pdf_bytes: bytes) -> str:
-        """Extract text from PDF bytes"""
+        """Extract text from PDF bytes with robust error handling"""
         try:
-            from io import BytesIO
-            pdf_reader = PyPDF2.PdfReader(BytesIO(pdf_bytes))
+            import io
+            
+            # Create BytesIO stream from bytes
+            pdf_stream = io.BytesIO(pdf_bytes)
+            
+            # Try to create PDF reader
+            try:
+                pdf_reader = PyPDF2.PdfReader(pdf_stream)
+            except Exception as reader_error:
+                st.error(f"Cannot read PDF file: {str(reader_error)}")
+                return ""
+            
+            # Check if PDF has pages
+            try:
+                page_count = len(pdf_reader.pages)
+                if page_count == 0:
+                    st.warning("PDF appears to be empty.")
+                    return ""
+            except Exception as page_error:
+                st.error(f"Cannot access PDF pages: {str(page_error)}")
+                return ""
+            
+            # Extract text from each page
             text = ""
-            for page in pdf_reader.pages:
-                text += page.extract_text() + "\n"
+            for page_num in range(page_count):
+                try:
+                    page = pdf_reader.pages[page_num]
+                    page_text = page.extract_text()
+                    if page_text:
+                        text += page_text + "\n"
+                except Exception as page_error:
+                    st.warning(f"Could not extract text from page {page_num + 1}: {str(page_error)}")
+                    continue
+            
+            if not text.strip():
+                st.warning("No text could be extracted from the PDF. It might be image-based or corrupted.")
+                return ""
+            
             return text
+            
         except Exception as e:
             st.error(f"Error reading PDF: {str(e)}")
             return ""
@@ -88,8 +122,20 @@ class DocumentProcessor:
                 # Process DOCX directly from bytes
                 text = self.extract_text_from_docx_bytes(uploaded_file.getvalue())
             elif file_extension == '.txt':
-                # Process TXT directly from bytes
-                text = uploaded_file.getvalue().decode('utf-8')
+                # Process TXT directly from bytes with proper encoding handling
+                try:
+                    text = uploaded_file.getvalue().decode('utf-8')
+                except UnicodeDecodeError:
+                    # Try other common encodings
+                    for encoding in ['latin-1', 'cp1252', 'iso-8859-1']:
+                        try:
+                            text = uploaded_file.getvalue().decode(encoding)
+                            break
+                        except UnicodeDecodeError:
+                            continue
+                    else:
+                        # If all else fails, use utf-8 with error handling
+                        text = uploaded_file.getvalue().decode('utf-8', errors='replace')
             else:
                 st.error(f"Unsupported file format: {file_extension}")
                 return None
