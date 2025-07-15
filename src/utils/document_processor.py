@@ -45,35 +45,59 @@ class DocumentProcessor:
             st.error(f"Error reading TXT: {str(e)}")
             return ""
     
+    def extract_text_from_pdf_bytes(self, pdf_bytes: bytes) -> str:
+        """Extract text from PDF bytes"""
+        try:
+            from io import BytesIO
+            pdf_reader = PyPDF2.PdfReader(BytesIO(pdf_bytes))
+            text = ""
+            for page in pdf_reader.pages:
+                text += page.extract_text() + "\n"
+            return text
+        except Exception as e:
+            st.error(f"Error reading PDF: {str(e)}")
+            return ""
+    
+    def extract_text_from_docx_bytes(self, docx_bytes: bytes) -> str:
+        """Extract text from DOCX bytes"""
+        try:
+            from io import BytesIO
+            doc = docx.Document(BytesIO(docx_bytes))
+            text = ""
+            for paragraph in doc.paragraphs:
+                text += paragraph.text + "\n"
+            return text
+        except Exception as e:
+            st.error(f"Error reading DOCX: {str(e)}")
+            return ""
+    
     def process_uploaded_file(self, uploaded_file) -> Optional[str]:
         """Process uploaded file and extract text"""
         if uploaded_file is None:
             return None
         
-        # Create temporary file
-        with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(uploaded_file.name)[1]) as temp_file:
-            temp_file.write(uploaded_file.getbuffer())
-            temp_path = temp_file.name
-        
+        # Process file directly from memory without saving to disk
         try:
             # Extract text based on file extension
             file_extension = os.path.splitext(uploaded_file.name)[1].lower()
             
             if file_extension == '.pdf':
-                text = self.extract_text_from_pdf(temp_path)
+                # Process PDF directly from bytes
+                text = self.extract_text_from_pdf_bytes(uploaded_file.getvalue())
             elif file_extension == '.docx':
-                text = self.extract_text_from_docx(temp_path)
+                # Process DOCX directly from bytes
+                text = self.extract_text_from_docx_bytes(uploaded_file.getvalue())
             elif file_extension == '.txt':
-                text = self.extract_text_from_txt(temp_path)
+                # Process TXT directly from bytes
+                text = uploaded_file.getvalue().decode('utf-8')
             else:
                 st.error(f"Unsupported file format: {file_extension}")
                 return None
             
             return text
-        finally:
-            # Clean up temporary file
-            if os.path.exists(temp_path):
-                os.remove(temp_path)
+        except Exception as e:
+            st.error(f"Error processing file: {str(e)}")
+            return None
     
     def split_into_chapters(self, text: str) -> Dict[str, str]:
         """Split text into chapters based on common patterns"""
