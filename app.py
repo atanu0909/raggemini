@@ -159,6 +159,9 @@ def configure_test_page(components):
         config = components['question_generator'].display_test_configuration(questions)
         
         if config and st.button("🚀 Create Custom Test", type="primary"):
+            # Add chapter name to config
+            config['chapter_name'] = selected_chapter
+            
             custom_test = components['question_generator'].create_custom_test(questions, config)
             
             st.session_state['custom_test'] = custom_test
@@ -178,20 +181,20 @@ def take_test_page(components):
 
 def display_custom_test(components):
     custom_test = st.session_state['custom_test']
-    test_config = st.session_state['test_config']
+    test_config = st.session_state.get('test_config', {})
     
-    st.subheader(f"📝 {custom_test['test_name']}")
+    st.subheader(f"📝 {custom_test.get('test_name', 'Custom Test')}")
     
     # Test info
     col1, col2, col3, col4 = st.columns(4)
     with col1:
-        st.metric("📚 Chapter", custom_test['chapter_name'])
+        st.metric("📚 Chapter", custom_test.get('chapter_name', 'Unknown'))
     with col2:
-        st.metric("📝 Questions", custom_test['total_questions'])
+        st.metric("📝 Questions", custom_test.get('total_questions', 0))
     with col3:
-        st.metric("📊 Total Marks", custom_test['total_marks'])
+        st.metric("📊 Total Marks", custom_test.get('total_marks', 0))
     with col4:
-        st.metric("⏰ Time Limit", f"{custom_test['time_limit']} min")
+        st.metric("⏰ Time Limit", f"{custom_test.get('time_limit', 60)} min")
     
     # User information
     if 'user_name' not in st.session_state:

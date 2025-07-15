@@ -77,6 +77,7 @@ class QuestionGenerator:
         
         custom_test = {
             'test_name': test_config.get('test_name', 'Custom Test'),
+            'chapter_name': test_config.get('chapter_name', 'Unknown Chapter'),
             'created_at': datetime.now().isoformat(),
             'time_limit': test_config.get('time_limit', 60),  # minutes
             'total_questions': 0,
