@@ -1,9 +1,27 @@
-import PyPDF2
-import docx
 import os
+import io
 import tempfile
 from typing import Dict, List, Optional
 import streamlit as st
+
+# Try multiple PDF libraries for better compatibility
+try:
+    import PyPDF2
+    PYPDF2_AVAILABLE = True
+except ImportError:
+    PYPDF2_AVAILABLE = False
+
+try:
+    import pypdf
+    PYPDF_AVAILABLE = True
+except ImportError:
+    PYPDF_AVAILABLE = False
+
+try:
+    import docx
+    DOCX_AVAILABLE = True
+except ImportError:
+    DOCX_AVAILABLE = False
 
 class DocumentProcessor:
     """Handles PDF and document processing for chapter extraction"""
@@ -46,61 +64,123 @@ class DocumentProcessor:
             return ""
     
     def extract_text_from_pdf_bytes(self, pdf_bytes: bytes) -> str:
-        """Extract text from PDF bytes with robust error handling"""
+        """Extract text from PDF bytes with multiple library fallbacks"""
+        
+        # Method 1: Try PyPDF2 first
+        if PYPDF2_AVAILABLE:
+            try:
+                text = self._extract_with_pypdf2(pdf_bytes)
+                if text and text.strip():
+                    return text
+            except Exception as e:
+                st.warning(f"PyPDF2 failed: {str(e)}")
+        
+        # Method 2: Try pypdf as fallback
+        if PYPDF_AVAILABLE:
+            try:
+                text = self._extract_with_pypdf(pdf_bytes)
+                if text and text.strip():
+                    return text
+            except Exception as e:
+                st.warning(f"pypdf failed: {str(e)}")
+        
+        # Method 3: Try with temporary file as last resort
         try:
-            import io
-            
-            # Create BytesIO stream from bytes
-            pdf_stream = io.BytesIO(pdf_bytes)
-            
-            # Try to create PDF reader
-            try:
-                pdf_reader = PyPDF2.PdfReader(pdf_stream)
-            except Exception as reader_error:
-                st.error(f"Cannot read PDF file: {str(reader_error)}")
-                return ""
-            
-            # Check if PDF has pages
-            try:
-                page_count = len(pdf_reader.pages)
-                if page_count == 0:
-                    st.warning("PDF appears to be empty.")
-                    return ""
-            except Exception as page_error:
-                st.error(f"Cannot access PDF pages: {str(page_error)}")
-                return ""
-            
-            # Extract text from each page
-            text = ""
-            for page_num in range(page_count):
-                try:
-                    page = pdf_reader.pages[page_num]
-                    page_text = page.extract_text()
-                    if page_text:
-                        text += page_text + "\n"
-                except Exception as page_error:
-                    st.warning(f"Could not extract text from page {page_num + 1}: {str(page_error)}")
-                    continue
-            
-            if not text.strip():
-                st.warning("No text could be extracted from the PDF. It might be image-based or corrupted.")
-                return ""
-            
-            return text
-            
+            text = self._extract_with_tempfile(pdf_bytes)
+            if text and text.strip():
+                return text
         except Exception as e:
-            st.error(f"Error reading PDF: {str(e)}")
-            return ""
+            st.warning(f"Temporary file method failed: {str(e)}")
+        
+        # If all methods fail
+        st.error("Could not extract text from PDF. The file might be corrupted or image-based.")
+        return ""
+    
+    def _extract_with_pypdf2(self, pdf_bytes: bytes) -> str:
+        """Extract text using PyPDF2"""
+        pdf_stream = io.BytesIO(pdf_bytes)
+        pdf_reader = PyPDF2.PdfReader(pdf_stream)
+        
+        text = ""
+        for page_num, page in enumerate(pdf_reader.pages):
+            try:
+                page_text = page.extract_text()
+                if page_text:
+                    text += page_text + "\n"
+            except Exception as e:
+                st.warning(f"Error extracting page {page_num + 1}: {str(e)}")
+                continue
+        
+        return text
+    
+    def _extract_with_pypdf(self, pdf_bytes: bytes) -> str:
+        """Extract text using pypdf"""
+        pdf_stream = io.BytesIO(pdf_bytes)
+        pdf_reader = pypdf.PdfReader(pdf_stream)
+        
+        text = ""
+        for page_num, page in enumerate(pdf_reader.pages):
+            try:
+                page_text = page.extract_text()
+                if page_text:
+                    text += page_text + "\n"
+            except Exception as e:
+                st.warning(f"Error extracting page {page_num + 1}: {str(e)}")
+                continue
+        
+        return text
+    
+    def _extract_with_tempfile(self, pdf_bytes: bytes) -> str:
+        """Extract text using temporary file approach"""
+        with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as tmp_file:
+            tmp_file.write(pdf_bytes)
+            tmp_path = tmp_file.name
+        
+        try:
+            if PYPDF2_AVAILABLE:
+                with open(tmp_path, 'rb') as file:
+                    pdf_reader = PyPDF2.PdfReader(file)
+                    text = ""
+                    for page in pdf_reader.pages:
+                        text += page.extract_text() + "\n"
+                    return text
+            else:
+                raise Exception("No PDF library available")
+        finally:
+            try:
+                os.unlink(tmp_path)
+            except:
+                pass
     
     def extract_text_from_docx_bytes(self, docx_bytes: bytes) -> str:
-        """Extract text from DOCX bytes"""
+        """Extract text from DOCX bytes with robust error handling"""
+        if not DOCX_AVAILABLE:
+            st.error("python-docx library is not available")
+            return ""
+        
         try:
-            from io import BytesIO
-            doc = docx.Document(BytesIO(docx_bytes))
+            docx_stream = io.BytesIO(docx_bytes)
+            doc = docx.Document(docx_stream)
+            
             text = ""
             for paragraph in doc.paragraphs:
-                text += paragraph.text + "\n"
+                if paragraph.text:
+                    text += paragraph.text + "\n"
+            
+            # Also extract text from tables
+            for table in doc.tables:
+                for row in table.rows:
+                    for cell in row.cells:
+                        if cell.text:
+                            text += cell.text + " "
+                    text += "\n"
+            
+            if not text.strip():
+                st.warning("No text could be extracted from the DOCX file.")
+                return ""
+            
             return text
+            
         except Exception as e:
             st.error(f"Error reading DOCX: {str(e)}")
             return ""
