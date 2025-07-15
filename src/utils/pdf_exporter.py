@@ -122,6 +122,10 @@ class PDFExporter:
             from io import BytesIO
             buffer = BytesIO()
             
+            # Debug logging
+            st.write(f"Debug: Starting PDF export for {filename}")
+            st.write(f"Debug: Questions keys: {list(questions.keys())}")
+            
             # Create PDF document
             doc = SimpleDocTemplate(buffer, pagesize=A4, topMargin=1*inch)
             story = []
@@ -139,6 +143,7 @@ class PDFExporter:
             
             # Export each question type
             question_types = ['mcq', '1_mark', '2_mark', '3_mark', '5_mark']
+            questions_added = 0
             
             for q_type in question_types:
                 if q_type in questions and questions[q_type]:
@@ -154,9 +159,15 @@ class PDFExporter:
                     
                     # Add questions
                     for i, question in enumerate(questions[q_type], 1):
-                        self.add_question_to_story(story, question, q_type, i)
+                        try:
+                            self.add_question_to_story(story, question, q_type, i)
+                            questions_added += 1
+                        except Exception as q_error:
+                            st.warning(f"Error adding question {i} from {q_type}: {str(q_error)}")
                     
                     story.append(Spacer(1, 20))
+            
+            st.write(f"Debug: Added {questions_added} questions to PDF")
             
             # Build PDF
             doc.build(story)
@@ -165,44 +176,73 @@ class PDFExporter:
             pdf_bytes = buffer.getvalue()
             buffer.close()
             
+            st.write(f"Debug: PDF generated successfully, size: {len(pdf_bytes)} bytes")
             return pdf_bytes
             
         except Exception as e:
             st.error(f"Error exporting to PDF bytes: {str(e)}")
+            st.write(f"Error type: {type(e).__name__}")
+            import traceback
+            st.write(f"Traceback: {traceback.format_exc()}")
             return None
     
     def add_question_to_story(self, story: List, question: Dict, q_type: str, q_number: int):
         """Add a single question to the PDF story"""
-        # Question text
-        q_text = f"Q{q_number}. {question['question']}"
-        story.append(Paragraph(q_text, self.question_style))
-        
-        if q_type == 'mcq':
-            # MCQ options
-            for option, text in question['options'].items():
-                option_text = f"{option}. {text}"
-                story.append(Paragraph(option_text, self.answer_style))
+        try:
+            # Question text
+            q_text = f"Q{q_number}. {question.get('question', 'Question not found')}"
+            story.append(Paragraph(q_text, self.question_style))
             
-            # Correct answer
-            correct = question.get('correct_answer', 'N/A')
-            story.append(Paragraph(f"<b>Correct Answer: {correct}</b>", self.answer_style))
+            if q_type == 'mcq':
+                # MCQ options
+                options = question.get('options', {})
+                if isinstance(options, dict):
+                    for option, text in options.items():
+                        option_text = f"{option}. {text}"
+                        story.append(Paragraph(option_text, self.answer_style))
+                elif isinstance(options, list):
+                    for i, option in enumerate(options):
+                        option_text = f"{chr(65+i)}. {option}"
+                        story.append(Paragraph(option_text, self.answer_style))
+                
+                # Correct answer
+                correct = question.get('correct_answer', question.get('answer', 'N/A'))
+                story.append(Paragraph(f"<b>Correct Answer: {correct}</b>", self.answer_style))
+                
+                # Explanation
+                if 'explanation' in question:
+                    story.append(Paragraph(f"<i>Explanation: {question['explanation']}</i>", self.answer_style))
             
-            # Explanation
-            if 'explanation' in question:
-                story.append(Paragraph(f"<i>Explanation: {question['explanation']}</i>", self.answer_style))
-        
-        else:
-            # Subjective question details
-            marks = question.get('marks', 1)
-            story.append(Paragraph(f"<b>Marks: {marks}</b>", self.answer_style))
+            else:
+                # Subjective question details
+                marks = question.get('marks', 1)
+                story.append(Paragraph(f"<b>Marks: {marks}</b>", self.answer_style))
+                
+                if 'expected_length' in question:
+                    story.append(Paragraph(f"<i>Expected Length: {question['expected_length']}</i>", self.answer_style))
+                
+                if 'key_points' in question:
+                    story.append(Paragraph("<b>Key Points:</b>", self.answer_style))
+                    key_points = question['key_points']
+                    if isinstance(key_points, list):
+                        for point in key_points:
+                            story.append(Paragraph(f"• {point}", self.answer_style))
+                    else:
+                        story.append(Paragraph(f"• {key_points}", self.answer_style))
+                
+                # Sample answer if available
+                if 'answer' in question:
+                    story.append(Paragraph(f"<b>Sample Answer:</b>", self.answer_style))
+                    story.append(Paragraph(f"{question['answer']}", self.answer_style))
             
-            if 'expected_length' in question:
-                story.append(Paragraph(f"<i>Expected Length: {question['expected_length']}</i>", self.answer_style))
+            # Add space between questions
+            story.append(Spacer(1, 10))
             
-            if 'key_points' in question:
-                story.append(Paragraph("<b>Key Points:</b>", self.answer_style))
-                for point in question['key_points']:
-                    story.append(Paragraph(f"• {point}", self.answer_style))
+        except Exception as e:
+            st.error(f"Error adding question {q_number}: {str(e)}")
+            # Add a fallback question entry
+            story.append(Paragraph(f"Q{q_number}. [Error loading question]", self.question_style))
+            story.append(Spacer(1, 10))
     
     def export_test_results_to_pdf(self, results: List[Dict], test_info: Dict, filename: str) -> str:
         """Export test results to PDF format"""
