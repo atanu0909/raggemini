@@ -1,6 +1,7 @@
 import PyPDF2
 import docx
 import os
+import tempfile
 from typing import Dict, List, Optional
 import streamlit as st
 
@@ -49,28 +50,30 @@ class DocumentProcessor:
         if uploaded_file is None:
             return None
         
-        # Save uploaded file temporarily
-        temp_path = f"uploads/{uploaded_file.name}"
-        with open(temp_path, "wb") as f:
-            f.write(uploaded_file.getbuffer())
+        # Create temporary file
+        with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(uploaded_file.name)[1]) as temp_file:
+            temp_file.write(uploaded_file.getbuffer())
+            temp_path = temp_file.name
         
-        # Extract text based on file extension
-        file_extension = os.path.splitext(uploaded_file.name)[1].lower()
-        
-        if file_extension == '.pdf':
-            text = self.extract_text_from_pdf(temp_path)
-        elif file_extension == '.docx':
-            text = self.extract_text_from_docx(temp_path)
-        elif file_extension == '.txt':
-            text = self.extract_text_from_txt(temp_path)
-        else:
-            st.error(f"Unsupported file format: {file_extension}")
-            return None
-        
-        # Clean up temporary file
-        os.remove(temp_path)
-        
-        return text
+        try:
+            # Extract text based on file extension
+            file_extension = os.path.splitext(uploaded_file.name)[1].lower()
+            
+            if file_extension == '.pdf':
+                text = self.extract_text_from_pdf(temp_path)
+            elif file_extension == '.docx':
+                text = self.extract_text_from_docx(temp_path)
+            elif file_extension == '.txt':
+                text = self.extract_text_from_txt(temp_path)
+            else:
+                st.error(f"Unsupported file format: {file_extension}")
+                return None
+            
+            return text
+        finally:
+            # Clean up temporary file
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
     
     def split_into_chapters(self, text: str) -> Dict[str, str]:
         """Split text into chapters based on common patterns"""
