@@ -388,14 +388,11 @@ class QuestionGenerator:
         """Create a download button for PDF export"""
         if st.button("📄 Export Questions to PDF", key=f"pdf_export_{filename}"):
             with st.spinner("Generating PDF..."):
-                pdf_path = self.export_questions_to_pdf(questions, filename)
-                
-                if pdf_path:
-                    # Create download link
-                    try:
-                        with open(pdf_path, 'rb') as f:
-                            pdf_bytes = f.read()
-                        
+                try:
+                    # Generate PDF in memory
+                    pdf_bytes = self.pdf_exporter.export_questions_to_pdf_bytes(questions, filename)
+                    
+                    if pdf_bytes:
                         st.download_button(
                             label="📥 Download PDF",
                             data=pdf_bytes,
@@ -403,8 +400,49 @@ class QuestionGenerator:
                             mime="application/pdf",
                             key=f"download_{filename}"
                         )
-                    except Exception as e:
-                        st.error(f"❌ Error creating download: {str(e)}")
+                        st.success("✅ PDF generated successfully!")
+                    else:
+                        st.error("❌ Failed to generate PDF")
+                        
+                except Exception as e:
+                    st.error(f"❌ Error generating PDF: {str(e)}")
+                    
+                    # Fallback: Create a simple text download
+                    try:
+                        text_content = self._create_text_format(questions)
+                        st.download_button(
+                            label="� Download as Text (Fallback)",
+                            data=text_content,
+                            file_name=f"{filename}_questions.txt",
+                            mime="text/plain",
+                            key=f"download_text_{filename}"
+                        )
+                        st.info("PDF generation failed, but text version is available.")
+                    except:
+                        st.error("All export methods failed.")
+    
+    def _create_text_format(self, questions: Dict) -> str:
+        """Create a text format of questions as fallback"""
+        text = f"Questions Generated on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+        text += "=" * 50 + "\n\n"
+        
+        for category, question_list in questions.items():
+            if category in ['mcq', '1_mark', '2_mark', '3_mark', '5_mark'] and question_list:
+                text += f"{category.upper()} QUESTIONS:\n"
+                text += "-" * 20 + "\n"
+                
+                for i, q in enumerate(question_list, 1):
+                    text += f"{i}. {q.get('question', '')}\n"
+                    if 'options' in q:
+                        for opt in q['options']:
+                            text += f"   {opt}\n"
+                        text += f"   Answer: {q.get('answer', '')}\n"
+                    else:
+                        text += f"   Answer: {q.get('answer', '')}\n"
+                    text += "\n"
+                text += "\n"
+        
+        return text
     
     def cleanup_audio_files(self):
         """Clean up audio files"""

@@ -116,6 +116,61 @@ class PDFExporter:
             st.error(f"Error exporting to PDF: {str(e)}")
             return None
     
+    def export_questions_to_pdf_bytes(self, questions: Dict, filename: str) -> bytes:
+        """Export questions to PDF and return as bytes for download"""
+        try:
+            from io import BytesIO
+            buffer = BytesIO()
+            
+            # Create PDF document
+            doc = SimpleDocTemplate(buffer, pagesize=A4, topMargin=1*inch)
+            story = []
+            
+            # Title
+            title = f"Question Bank - {questions.get('chapter_name', filename)}"
+            story.append(Paragraph(title, self.title_style))
+            story.append(Spacer(1, 20))
+            
+            # Chapter info
+            timestamp = questions.get('timestamp', datetime.now().isoformat())
+            date_str = timestamp.split('T')[0] if 'T' in timestamp else timestamp
+            story.append(Paragraph(f"Generated on: {date_str}", self.styles['Normal']))
+            story.append(Spacer(1, 20))
+            
+            # Export each question type
+            question_types = ['mcq', '1_mark', '2_mark', '3_mark', '5_mark']
+            
+            for q_type in question_types:
+                if q_type in questions and questions[q_type]:
+                    # Section header
+                    type_name = q_type.replace('_', ' ').title()
+                    if q_type == 'mcq':
+                        type_name = 'Multiple Choice Questions'
+                    else:
+                        type_name = f"{type_name} Questions"
+                    
+                    story.append(Paragraph(type_name, self.header_style))
+                    story.append(Spacer(1, 10))
+                    
+                    # Add questions
+                    for i, question in enumerate(questions[q_type], 1):
+                        self.add_question_to_story(story, question, q_type, i)
+                    
+                    story.append(Spacer(1, 20))
+            
+            # Build PDF
+            doc.build(story)
+            
+            # Get PDF bytes
+            pdf_bytes = buffer.getvalue()
+            buffer.close()
+            
+            return pdf_bytes
+            
+        except Exception as e:
+            st.error(f"Error exporting to PDF bytes: {str(e)}")
+            return None
+    
     def add_question_to_story(self, story: List, question: Dict, q_type: str, q_number: int):
         """Add a single question to the PDF story"""
         # Question text

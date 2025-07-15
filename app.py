@@ -111,34 +111,43 @@ def upload_and_generate_page(components):
                     with col5:
                         st.metric("5 Mark", len(questions['5_mark']))
                     
-                    # Save questions
-                    components['question_generator'].save_questions_to_file(questions, selected_chapter)
+                    # Save questions to session state (primary storage)
+                    st.session_state['current_questions'] = questions
+                    st.session_state['current_chapter'] = selected_chapter
+                    
+                    # Also save to persistent storage for later access
+                    if 'saved_questions' not in st.session_state:
+                        st.session_state['saved_questions'] = {}
+                    st.session_state['saved_questions'][selected_chapter] = questions
+                    
+                    # Try to save to file (if possible in environment)
+                    try:
+                        components['question_generator'].save_questions_to_file(questions, selected_chapter)
+                    except Exception as e:
+                        st.warning(f"Could not save to file: {str(e)}")
                     
                     # PDF Export button
                     components['question_generator'].create_pdf_download_button(questions, selected_chapter)
-                    
-                    # Store in session state
-                    st.session_state['current_questions'] = questions
-                    st.session_state['current_chapter'] = selected_chapter
                     
                     st.info("✨ Questions saved! Now go to 'Configure Test' to create your custom test.")
 
 def configure_test_page(components):
     st.header("⚙️ Configure Test")
     
-    # Load available question sets
-    available_files = components['question_generator'].get_available_question_files()
-    
-    if not available_files:
+    # Check for saved questions in session state
+    if 'saved_questions' not in st.session_state or not st.session_state['saved_questions']:
         st.warning("⚠️ No question sets available. Please upload a chapter and generate questions first.")
         return
     
-    # Select question set
-    selected_file = st.selectbox("📚 Select a chapter:", available_files)
+    # Get available chapters from session state
+    available_chapters = list(st.session_state['saved_questions'].keys())
     
-    if selected_file:
-        # Load questions
-        questions = components['question_generator'].load_questions_from_file(selected_file)
+    # Select question set
+    selected_chapter = st.selectbox("📚 Select a chapter:", available_chapters)
+    
+    if selected_chapter:
+        # Load questions from session state
+        questions = st.session_state['saved_questions'][selected_chapter]
         
         if not questions:
             st.error("❌ Failed to load questions.")
