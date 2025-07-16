@@ -47,6 +47,10 @@ try:
     from gtts import gTTS
     import speech_recognition as sr
     from audio_recorder_streamlit import audio_recorder
+    import tempfile
+    import wave
+    from pydub import AudioSegment
+    from pydub.utils import make_chunks
     AUDIO_AVAILABLE = True
 except ImportError:
     AUDIO_AVAILABLE = False
@@ -474,7 +478,7 @@ class MistralAPI:
             }
 
 class AudioProcessor:
-    """Handles audio-related functionality"""
+    """Handles audio-related functionality with multiple recognition engines"""
     
     @staticmethod
     def text_to_speech(text: str) -> bytes:
@@ -497,29 +501,395 @@ class AudioProcessor:
             return b""
     
     @staticmethod
-    def speech_to_text(audio_data: bytes) -> str:
-        """Convert speech to text"""
+    def simple_speech_to_text(audio_data: bytes) -> str:
+        """Simple speech to text without pydub as fallback"""
         if not AUDIO_AVAILABLE or not audio_data:
             return ""
         
+        import uuid
+        temp_file = None
+        
         try:
-            import tempfile
+            # Create unique temporary file
+            temp_filename = f"temp_audio_{uuid.uuid4().hex}.wav"
+            temp_file = tempfile.NamedTemporaryFile(suffix='.wav', delete=False, prefix=temp_filename)
+            temp_file.write(audio_data)
+            temp_file.flush()
+            temp_file.close()  # Close file handle before using it
             
-            with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as temp_file:
-                temp_file.write(audio_data)
-                temp_file.flush()
+            recognizer = sr.Recognizer()
+            with sr.AudioFile(temp_file.name) as source:
+                recognizer.adjust_for_ambient_noise(source, duration=0.2)
+                audio = recognizer.record(source)
+            
+            try:
+                result = recognizer.recognize_google(audio)
+                return result
+            except sr.UnknownValueError:
+                st.warning("Could not understand the audio")
+                return ""
+            except sr.RequestError as e:
+                st.error(f"Google Speech Recognition service error: {e}")
+                return ""
                 
-                recognizer = sr.Recognizer()
-                with sr.AudioFile(temp_file.name) as source:
-                    audio = recognizer.record(source)
-                
-                text = recognizer.recognize_google(audio)
-                os.unlink(temp_file.name)
-                
-                return text
         except Exception as e:
-            st.error(f"Error recognizing speech: {str(e)}")
+            st.error(f"Error processing audio: {str(e)}")
             return ""
+        
+        finally:
+            # Clean up temporary file
+            if temp_file and os.path.exists(temp_file.name):
+                try:
+                    os.unlink(temp_file.name)
+                except:
+                    pass
+    
+    @staticmethod
+    def speech_to_text_with_pydub(audio_data: bytes) -> str:
+        """Convert speech to text using pydub for better audio handling"""
+        if not AUDIO_AVAILABLE or not audio_data:
+            return ""
+        
+        import uuid
+        input_file = None
+        output_file = None
+        
+        try:
+            # Create unique temporary files
+            input_filename = f"temp_input_{uuid.uuid4().hex}.wav"
+            output_filename = f"temp_output_{uuid.uuid4().hex}.wav"
+            
+            input_file = tempfile.NamedTemporaryFile(suffix='.wav', delete=False, prefix=input_filename)
+            input_file.write(audio_data)
+            input_file.flush()
+            input_file.close()
+            
+            # Load audio with pydub (with fallback)
+            try:
+                # Try without ffmpeg first
+                audio = AudioSegment.from_wav(input_file.name)
+            except:
+                try:
+                    # Try with general file loader
+                    audio = AudioSegment.from_file(input_file.name)
+                except Exception as e:
+                    st.warning(f"Pydub audio loading failed: {str(e)}")
+                    # Fall back to simple method
+                    return AudioProcessor.simple_speech_to_text(audio_data)
+            
+            # Convert to standard format for better recognition
+            audio = audio.set_channels(1)  # Mono
+            audio = audio.set_frame_rate(16000)  # 16kHz
+            audio = audio.set_sample_width(2)  # 16-bit
+            
+            # Normalize audio
+            audio = audio.normalize()
+            
+            # Save processed audio
+            output_file = tempfile.NamedTemporaryFile(suffix='.wav', delete=False, prefix=output_filename)
+            output_file.close()
+            
+            audio.export(output_file.name, format="wav")
+            
+            # Use speech recognition on processed audio
+            recognizer = sr.Recognizer()
+            with sr.AudioFile(output_file.name) as source:
+                recognizer.adjust_for_ambient_noise(source, duration=0.2)
+                audio_sr = recognizer.record(source)
+            
+            # Try recognition
+            try:
+                result = recognizer.recognize_google(audio_sr)
+                if result:
+                    st.success("✅ Advanced audio processing successful!")
+                    return result
+            except sr.UnknownValueError:
+                st.warning("⚠️ Could not understand processed audio")
+            except sr.RequestError as e:
+                st.warning(f"⚠️ Google Speech service error: {e}")
+            except Exception as e:
+                st.warning(f"⚠️ Recognition error: {e}")
+            
+            return ""
+                    
+        except Exception as e:
+            st.error(f"Error processing audio with pydub: {str(e)}")
+            return ""
+        
+        finally:
+            # Clean up temporary files
+            if input_file and os.path.exists(input_file.name):
+                try:
+                    os.unlink(input_file.name)
+                except:
+                    pass
+            if output_file and os.path.exists(output_file.name):
+                try:
+                    os.unlink(output_file.name)
+                except:
+                    pass
+    
+    @staticmethod
+    def smart_speech_to_text(audio_data: bytes) -> str:
+        """Smart speech to text that tries pydub first, then falls back to simple method"""
+        if not AUDIO_AVAILABLE or not audio_data:
+            return ""
+        
+        # Try pydub method first (better quality)
+        try:
+            st.info("🔄 Trying advanced audio processing...")
+            result = AudioProcessor.speech_to_text_with_pydub(audio_data)
+            if result and result.strip():
+                st.success("✅ Advanced audio processing successful!")
+                return result.strip()
+            else:
+                st.warning("⚠️ Advanced processing returned empty result")
+        except Exception as e:
+            st.warning(f"Advanced audio processing failed: {str(e)}")
+            st.info("🔄 Falling back to simple audio processing...")
+        
+        # Fall back to simple method
+        try:
+            result = AudioProcessor.simple_speech_to_text(audio_data)
+            if result and result.strip():
+                st.success("✅ Simple audio processing successful!")
+                return result.strip()
+            else:
+                st.warning("⚠️ Simple processing returned empty result")
+        except Exception as e:
+            st.error(f"Simple audio processing failed: {str(e)}")
+        
+        st.error("❌ All speech recognition methods failed")
+        return ""
+    
+    @staticmethod
+    def process_audio_file(uploaded_audio_file) -> str:
+        """Process uploaded audio file using pydub for format conversion"""
+        if not AUDIO_AVAILABLE or not uploaded_audio_file:
+            return ""
+        
+        import uuid
+        temp_input_file = None
+        temp_output_file = None
+        
+        try:
+            # Create unique temporary file for input
+            input_filename = f"temp_input_{uuid.uuid4().hex}.{uploaded_audio_file.name.split('.')[-1]}"
+            temp_input_file = tempfile.NamedTemporaryFile(suffix=f'.{uploaded_audio_file.name.split(".")[-1]}', delete=False, prefix=input_filename)
+            temp_input_file.write(uploaded_audio_file.read())
+            temp_input_file.flush()
+            temp_input_file.close()
+            
+            # Load audio with pydub (supports many formats)
+            try:
+                st.info(f"🔄 Loading {uploaded_audio_file.name}...")
+                audio = AudioSegment.from_file(temp_input_file.name)
+                
+                # Show audio information
+                st.info(f"📊 Audio info: {audio.duration_seconds:.2f}s, {audio.frame_rate}Hz, {audio.channels} channels")
+                
+                # Convert to optimal format for speech recognition
+                st.info("🔄 Converting to optimal format...")
+                audio = audio.set_channels(1)  # Mono
+                audio = audio.set_frame_rate(16000)  # 16kHz
+                audio = audio.set_sample_width(2)  # 16-bit
+                
+                # Normalize and clean audio
+                audio = audio.normalize()
+                audio = audio.strip_silence(silence_thresh=-40)
+                
+                # If audio is too long, split into chunks
+                if audio.duration_seconds > 60:
+                    st.info("🔄 Audio is long, processing in chunks...")
+                    chunk_length_ms = 30000  # 30 seconds
+                    chunks = make_chunks(audio, chunk_length_ms)
+                    
+                    full_text = ""
+                    for i, chunk in enumerate(chunks):
+                        if len(chunk) > 1000:  # Skip very short chunks
+                            st.info(f"🔄 Processing chunk {i+1}/{len(chunks)}...")
+                            
+                            chunk_file = None
+                            try:
+                                chunk_filename = f"temp_chunk_{uuid.uuid4().hex}.wav"
+                                chunk_file = tempfile.NamedTemporaryFile(suffix='.wav', delete=False, prefix=chunk_filename)
+                                chunk_file.close()
+                                
+                                chunk.export(chunk_file.name, format="wav")
+                                
+                                recognizer = sr.Recognizer()
+                                try:
+                                    with sr.AudioFile(chunk_file.name) as source:
+                                        recognizer.adjust_for_ambient_noise(source, duration=0.2)
+                                        audio_sr = recognizer.record(source)
+                                    
+                                    chunk_text = recognizer.recognize_google(audio_sr)
+                                    if chunk_text:
+                                        full_text += chunk_text + " "
+                                        st.success(f"✅ Chunk {i+1} processed")
+                                    
+                                except Exception as e:
+                                    st.warning(f"⚠️ Chunk {i+1} failed: {str(e)}")
+                                
+                            finally:
+                                if chunk_file and os.path.exists(chunk_file.name):
+                                    try:
+                                        os.unlink(chunk_file.name)
+                                    except:
+                                        pass
+                    
+                    return full_text.strip()
+                
+                else:
+                    # Process single audio file
+                    output_filename = f"temp_output_{uuid.uuid4().hex}.wav"
+                    temp_output_file = tempfile.NamedTemporaryFile(suffix='.wav', delete=False, prefix=output_filename)
+                    temp_output_file.close()
+                    
+                    audio.export(temp_output_file.name, format="wav")
+                    
+                    recognizer = sr.Recognizer()
+                    with sr.AudioFile(temp_output_file.name) as source:
+                        recognizer.adjust_for_ambient_noise(source, duration=0.2)
+                        audio_sr = recognizer.record(source)
+                    
+                    # Try recognition
+                    try:
+                        result = recognizer.recognize_google(audio_sr)
+                        return result
+                    except sr.UnknownValueError:
+                        st.error("Could not understand the audio file")
+                    except sr.RequestError as e:
+                        st.error(f"Google Speech Recognition service error: {e}")
+                    
+                    return ""
+            
+            except Exception as e:
+                st.error(f"Audio processing error: {str(e)}")
+                return ""
+                
+        except Exception as e:
+            st.error(f"Error processing audio file: {str(e)}")
+            return ""
+        
+        finally:
+            # Clean up temporary files
+            if temp_input_file and os.path.exists(temp_input_file.name):
+                try:
+                    os.unlink(temp_input_file.name)
+                except:
+                    pass
+            if temp_output_file and os.path.exists(temp_output_file.name):
+                try:
+                    os.unlink(temp_output_file.name)
+                except:
+                    pass
+    
+    @staticmethod
+    def create_audio_interface(question_text: str, current_idx: int) -> str:
+        """Create comprehensive audio interface"""
+        user_answer = ""
+        
+        if not AUDIO_AVAILABLE:
+            st.warning("🔇 Audio features not available. Please install audio dependencies.")
+            return ""
+        
+        st.markdown("---")
+        st.subheader("🎧 Audio Features")
+        
+        # Create tabs for different audio options
+        tab1, tab2, tab3 = st.tabs(["🔊 Listen", "🎤 Record", "📁 Upload Audio"])
+        
+        with tab1:
+            st.markdown("**Listen to the question:**")
+            if st.button("🔊 Play Question Audio", key=f"play_{current_idx}"):
+                with st.spinner("Generating audio..."):
+                    audio_data = AudioProcessor.text_to_speech(question_text)
+                    if audio_data:
+                        st.audio(audio_data, format='audio/mp3')
+                        st.success("🎵 Audio generated successfully!")
+                    else:
+                        st.error("❌ Failed to generate audio")
+        
+        with tab2:
+            st.markdown("**Record your answer:**")
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                if st.button("🎤 Start Recording", key=f"record_{current_idx}"):
+                    st.info("🎤 Click the microphone below to record your answer")
+                    audio_data = audio_recorder(
+                        text="Click to record",
+                        recording_color="#e87070",
+                        neutral_color="#6aa36f",
+                        icon_name="microphone",
+                        icon_size="3x",
+                        key=f"recorder_{current_idx}"
+                    )
+                    
+                    if audio_data:
+                        st.info("🔄 Processing your voice...")
+                        with st.spinner("Converting speech to text..."):
+                            voice_answer = AudioProcessor.smart_speech_to_text(audio_data)
+                        
+                        if voice_answer:
+                            st.success(f"✅ Voice answer recorded!")
+                            st.info(f"📝 Recognized text: {voice_answer}")
+                            user_answer = voice_answer
+                        else:
+                            st.error("❌ Could not understand the audio. Please try again.")
+            
+            with col2:
+                # Manual audio recording with improved interface
+                st.markdown("**Or use the recorder below:**")
+                audio_bytes = audio_recorder(
+                    text="Record Answer",
+                    recording_color="#ff6b6b",
+                    neutral_color="#4ecdc4",
+                    icon_name="microphone-alt",
+                    icon_size="2x",
+                    key=f"manual_recorder_{current_idx}"
+                )
+                
+                if audio_bytes:
+                    st.audio(audio_bytes, format="audio/wav")
+                    
+                    if st.button("🔤 Convert to Text", key=f"convert_{current_idx}"):
+                        with st.spinner("Converting speech to text..."):
+                            voice_answer = AudioProcessor.smart_speech_to_text(audio_bytes)
+                        
+                        if voice_answer:
+                            st.success(f"✅ Conversion successful!")
+                            st.text_area("Recognized Text:", voice_answer, key=f"recognized_{current_idx}")
+                            user_answer = voice_answer
+                        else:
+                            st.error("❌ Could not understand the audio. Please try speaking clearly.")
+        
+        with tab3:
+            st.markdown("**Upload an audio file:**")
+            st.info("📤 Supported formats: WAV, MP3, M4A, FLAC")
+            
+            uploaded_audio = st.file_uploader(
+                "Choose an audio file",
+                type=['wav', 'mp3', 'm4a', 'flac'],
+                key=f"audio_upload_{current_idx}"
+            )
+            
+            if uploaded_audio:
+                st.audio(uploaded_audio, format=f"audio/{uploaded_audio.name.split('.')[-1]}")
+                
+                if st.button("🔤 Process Audio File", key=f"process_audio_{current_idx}"):
+                    with st.spinner("Processing uploaded audio..."):
+                        file_answer = AudioProcessor.process_audio_file(uploaded_audio)
+                    
+                    if file_answer:
+                        st.success(f"✅ Audio file processed successfully!")
+                        st.text_area("Transcribed Text:", file_answer, key=f"transcribed_{current_idx}")
+                        user_answer = file_answer
+                    else:
+                        st.error("❌ Could not process the audio file. Please try a different file.")
+        
+        return user_answer
 
 class PDFExporter:
     """Handles PDF export functionality"""
@@ -943,52 +1313,11 @@ def take_test_page():
     st.write(question.text)
     
     # Audio features with improved functionality
-    if AUDIO_AVAILABLE:
-        st.markdown("---")
-        st.subheader("🎧 Audio Features")
-        
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            if st.button("🔊 Listen to Question", use_container_width=True):
-                with st.spinner("Generating audio..."):
-                    audio_data = AudioProcessor.text_to_speech(question.text)
-                    if audio_data:
-                        st.audio(audio_data, format='audio/mp3')
-                        st.success("🎵 Audio generated successfully!")
-                    else:
-                        st.error("❌ Failed to generate audio")
-        
-        with col2:
-            if st.button("🎤 Record Answer", use_container_width=True):
-                st.info("🎤 Click the microphone below to record your answer")
-                audio_data = audio_recorder(
-                    text="Click to record",
-                    recording_color="#e87070",
-                    neutral_color="#6aa36f",
-                    icon_name="microphone",
-                    icon_size="3x"
-                )
-                
-                if audio_data:
-                    st.info("🔄 Processing your voice...")
-                    voice_answer = AudioProcessor.speech_to_text(audio_data)
-                    if voice_answer:
-                        st.session_state.user_answers[current_idx] = voice_answer
-                        st.success(f"✅ Voice answer recorded: {voice_answer}")
-                    else:
-                        st.error("❌ Could not understand the audio. Please try again.")
-        
-        with col3:
-            if st.button("🔍 Preview Answer", use_container_width=True):
-                current_answer = st.session_state.user_answers.get(current_idx, "")
-                if current_answer:
-                    st.info(f"📝 Current answer: {current_answer}")
-                else:
-                    st.warning("⚠️ No answer recorded yet")
+    audio_answer = AudioProcessor.create_audio_interface(question.text, current_idx)
     
-    else:
-        st.warning("🔇 Audio features not available. Please install audio dependencies.")
+    # If audio answer was captured, use it
+    if audio_answer:
+        st.session_state.user_answers[current_idx] = audio_answer
     
     st.markdown("---")
     
