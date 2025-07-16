@@ -17,10 +17,25 @@ import base64
 # External libraries for document processing and audio
 try:
     import PyPDF2
-    import pypdf
-    PDF_AVAILABLE = True
+    PYPDF2_AVAILABLE = True
 except ImportError:
-    PDF_AVAILABLE = False
+    PYPDF2_AVAILABLE = False
+
+try:
+    import pypdf
+    PYPDF_AVAILABLE = True
+except ImportError:
+    PYPDF_AVAILABLE = False
+
+# For older pypdf versions, try alternative import
+if not PYPDF_AVAILABLE:
+    try:
+        import pyPdf as pypdf
+        PYPDF_AVAILABLE = True
+    except ImportError:
+        PYPDF_AVAILABLE = False
+
+PDF_AVAILABLE = PYPDF2_AVAILABLE or PYPDF_AVAILABLE
 
 try:
     from docx import Document
@@ -69,23 +84,165 @@ class DocumentProcessor:
     
     @staticmethod
     def extract_text_from_pdf(file_content: bytes) -> str:
-        """Extract text from PDF using multiple methods"""
+        """Extract text from PDF using multiple methods with comprehensive error handling"""
         text = ""
-        try:
-            if PDF_AVAILABLE:
-                reader = PyPDF2.PdfReader(io.BytesIO(file_content))
-                for page in reader.pages:
-                    text += page.extract_text() + "\n"
-            
-            if not text and PDF_AVAILABLE:
-                reader = pypdf.PdfReader(io.BytesIO(file_content))
-                for page in reader.pages:
-                    text += page.extract_text() + "\n"
-                    
-        except Exception as e:
-            st.error(f"Error extracting PDF text: {str(e)}")
+        extraction_methods = []
         
-        return text.strip()
+        st.info("🔍 Starting PDF text extraction...")
+        
+        # Method 1: Try PyPDF2 first
+        if PYPDF2_AVAILABLE:
+            try:
+                st.info("📖 Attempting extraction with PyPDF2...")
+                reader = PyPDF2.PdfReader(io.BytesIO(file_content))
+                
+                # Check if PDF is encrypted
+                if reader.is_encrypted:
+                    st.error("🔒 PDF is password protected. Please provide an unprotected PDF.")
+                    return ""
+                
+                page_count = len(reader.pages)
+                st.info(f"📄 Found {page_count} pages in PDF")
+                
+                for page_num, page in enumerate(reader.pages):
+                    try:
+                        page_text = page.extract_text()
+                        if page_text and page_text.strip():
+                            text += page_text + "\n"
+                            st.success(f"✅ Extracted text from page {page_num + 1}")
+                        else:
+                            st.warning(f"⚠️ No text found on page {page_num + 1}")
+                    except Exception as e:
+                        st.warning(f"❌ Error extracting from page {page_num + 1}: {str(e)}")
+                        continue
+                
+                if text.strip():
+                    extraction_methods.append("PyPDF2")
+                    st.success(f"✅ PyPDF2 extraction successful! Extracted {len(text)} characters")
+                else:
+                    st.warning("⚠️ PyPDF2 extraction failed - no text found")
+                    
+            except Exception as e:
+                st.error(f"❌ PyPDF2 failed: {str(e)}")
+        else:
+            st.warning("⚠️ PyPDF2 not available")
+        
+        # Method 2: Try pypdf as fallback if no text extracted
+        if not text.strip() and PYPDF_AVAILABLE:
+            try:
+                st.info("📖 Attempting extraction with pypdf...")
+                
+                # Handle both new pypdf and old pyPdf versions
+                if hasattr(pypdf, 'PdfReader'):
+                    # New pypdf version
+                    reader = pypdf.PdfReader(io.BytesIO(file_content))
+                    
+                    # Check if PDF is encrypted
+                    if reader.is_encrypted:
+                        st.error("🔒 PDF is password protected. Please provide an unprotected PDF.")
+                        return ""
+                    
+                    pages = reader.pages
+                else:
+                    # Old pyPdf version
+                    reader = pypdf.PdfFileReader(io.BytesIO(file_content))
+                    
+                    # Check if PDF is encrypted
+                    if reader.isEncrypted:
+                        st.error("🔒 PDF is password protected. Please provide an unprotected PDF.")
+                        return ""
+                    
+                    pages = [reader.getPage(i) for i in range(reader.getNumPages())]
+                
+                page_count = len(pages)
+                st.info(f"📄 Found {page_count} pages in PDF")
+                
+                for page_num, page in enumerate(pages):
+                    try:
+                        if hasattr(page, 'extract_text'):
+                            page_text = page.extract_text()
+                        else:
+                            page_text = page.extractText()
+                            
+                        if page_text and page_text.strip():
+                            text += page_text + "\n"
+                            st.success(f"✅ Extracted text from page {page_num + 1}")
+                        else:
+                            st.warning(f"⚠️ No text found on page {page_num + 1}")
+                    except Exception as e:
+                        st.warning(f"❌ Error extracting from page {page_num + 1}: {str(e)}")
+                        continue
+                
+                if text.strip():
+                    extraction_methods.append("pypdf")
+                    st.success(f"✅ pypdf extraction successful! Extracted {len(text)} characters")
+                else:
+                    st.warning("⚠️ pypdf extraction failed - no text found")
+                    
+            except Exception as e:
+                st.error(f"❌ pypdf failed: {str(e)}")
+        elif not PYPDF_AVAILABLE:
+            st.warning("⚠️ pypdf not available")
+        
+        # Method 3: Try alternative extraction with different encoding
+        if not text.strip() and PYPDF2_AVAILABLE:
+            try:
+                st.info("📖 Attempting alternative extraction method...")
+                reader = PyPDF2.PdfReader(io.BytesIO(file_content))
+                
+                for page_num, page in enumerate(reader.pages):
+                    try:
+                        # Try different extraction methods
+                        if hasattr(page, 'extract_text'):
+                            page_text = page.extract_text()
+                            if page_text:
+                                text += page_text + "\n"
+                        
+                        # Try extracting with different parameters for older versions
+                        if hasattr(page, 'extractText'):
+                            page_text = page.extractText()
+                            if page_text:
+                                text += page_text + "\n"
+                                
+                    except Exception as e:
+                        continue
+                
+                if text.strip():
+                    extraction_methods.append("PyPDF2-alternative")
+                    st.success(f"✅ Alternative extraction successful! Extracted {len(text)} characters")
+                    
+            except Exception as e:
+                st.error(f"❌ Alternative extraction failed: {str(e)}")
+        
+        # Clean up extracted text
+        if text.strip():
+            # Remove excessive whitespace and clean up
+            text = ' '.join(text.split())
+            text = text.replace('\n\n', '\n').replace('\n', ' ').strip()
+            
+            # Show final statistics
+            st.success(f"🎉 PDF processing complete!")
+            st.info(f"📊 Final statistics:")
+            st.info(f"  • Methods used: {', '.join(extraction_methods)}")
+            st.info(f"  • Characters extracted: {len(text)}")
+            st.info(f"  • Words extracted: {len(text.split())}")
+            
+            return text
+        
+        # If still no text, provide comprehensive error message
+        st.error("❌ Could not extract text from PDF")
+        st.error("🔍 Possible reasons:")
+        st.error("  • PDF contains only images/scanned content (needs OCR)")
+        st.error("  • PDF is password protected or encrypted")
+        st.error("  • PDF file is corrupted or has invalid format")
+        st.error("  • Text is embedded as images rather than searchable text")
+        st.error("💡 Suggestions:")
+        st.error("  • Try converting the PDF to text format first")
+        st.error("  • Use an OCR tool for scanned documents")
+        st.error("  • Check if the PDF opens correctly in other applications")
+        st.error("  • Try uploading a different PDF file")
+        
+        return ""
     
     @staticmethod
     def extract_text_from_docx(file_content: bytes) -> str:
@@ -119,17 +276,40 @@ class DocumentProcessor:
         if not uploaded_file:
             return ""
         
-        file_content = uploaded_file.read()
-        file_extension = uploaded_file.name.split('.')[-1].lower()
-        
-        if file_extension == 'pdf':
-            return DocumentProcessor.extract_text_from_pdf(file_content)
-        elif file_extension == 'docx':
-            return DocumentProcessor.extract_text_from_docx(file_content)
-        elif file_extension == 'txt':
-            return DocumentProcessor.extract_text_from_txt(file_content)
-        else:
-            st.error(f"Unsupported file type: {file_extension}")
+        try:
+            # Reset file pointer to beginning
+            uploaded_file.seek(0)
+            file_content = uploaded_file.read()
+            
+            # Check if file is empty
+            if not file_content:
+                st.error("❌ The uploaded file is empty.")
+                return ""
+            
+            file_extension = uploaded_file.name.split('.')[-1].lower()
+            
+            st.info(f"📄 Processing {file_extension.upper()} file: {uploaded_file.name}")
+            st.info(f"📏 File size: {len(file_content)} bytes")
+            
+            if file_extension == 'pdf':
+                if not PDF_AVAILABLE:
+                    st.error("❌ PDF processing libraries not available. Please install PyPDF2 and pypdf.")
+                    return ""
+                return DocumentProcessor.extract_text_from_pdf(file_content)
+            elif file_extension == 'docx':
+                if not DOCX_AVAILABLE:
+                    st.error("❌ DOCX processing library not available. Please install python-docx.")
+                    return ""
+                return DocumentProcessor.extract_text_from_docx(file_content)
+            elif file_extension == 'txt':
+                return DocumentProcessor.extract_text_from_txt(file_content)
+            else:
+                st.error(f"❌ Unsupported file type: {file_extension}")
+                st.error("✅ Supported formats: PDF, DOCX, TXT")
+                return ""
+                
+        except Exception as e:
+            st.error(f"❌ Error processing file: {str(e)}")
             return ""
 
 class MistralAPI:
@@ -420,24 +600,166 @@ def upload_and_generate_page():
     """Upload and question generation page"""
     st.header("📁 Upload & Generate Questions")
     
+    # Show system status
+    with st.expander("🔧 System Status"):
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.write("**PDF Processing:**")
+            if PYPDF2_AVAILABLE:
+                st.success("✅ PyPDF2 Available")
+            else:
+                st.error("❌ PyPDF2 Not Available")
+            
+            if PYPDF_AVAILABLE:
+                pypdf_version = "old pyPdf" if hasattr(pypdf, 'PdfFileReader') else "new pypdf"
+                st.success(f"✅ pypdf Available ({pypdf_version})")
+            else:
+                st.error("❌ pypdf Not Available")
+                
+            if PDF_AVAILABLE:
+                st.success("✅ PDF Processing Ready")
+            else:
+                st.error("❌ No PDF Libraries Available")
+        
+        with col2:
+            st.write("**DOCX Processing:**")
+            if DOCX_AVAILABLE:
+                st.success("✅ Available")
+            else:
+                st.error("❌ Not available")
+        
+        with col3:
+            st.write("**Audio Features:**")
+            if AUDIO_AVAILABLE:
+                st.success("✅ Available")
+            else:
+                st.warning("⚠️ Not available")
+    
     # File upload
     uploaded_file = st.file_uploader(
         "Choose a file",
         type=['pdf', 'docx', 'txt'],
-        help="Upload your book chapter"
+        help="Upload your book chapter (PDF, DOCX, or TXT format)"
     )
     
+    # Sample text for testing
+    st.markdown("---")
+    st.subheader("🧪 Test with Sample Text")
+    if st.button("📝 Use Sample Text"):
+        sample_text = """
+        The history of artificial intelligence (AI) began in antiquity, with myths, stories and rumors of artificial beings endowed with intelligence or consciousness by master craftsmen. The seeds of modern AI were planted by classical philosophers who attempted to describe the process of human thinking as the mechanical manipulation of symbols. This work culminated in the invention of the programmable digital computer in the 1940s, a machine based on the abstract essence of mathematical reasoning. This device and the ideas behind it inspired a handful of scientists to begin seriously discussing the possibility of building an electronic brain.
+        
+        The field of AI research was born at a workshop at Dartmouth College in 1956, where the term "artificial intelligence" was coined. The participants of this workshop predicted that machines would soon be able to perform any intellectual task that a human being could do. This optimism, however, was short-lived. The early years of AI were characterized by both remarkable achievements and significant setbacks.
+        
+        Machine learning, a subset of AI, focuses on the development of algorithms that can learn and improve from experience without being explicitly programmed. This approach has become increasingly important in recent years, with applications ranging from image recognition to natural language processing.
+        """
+        
+        st.session_state.sample_text = sample_text
+        st.success("✅ Sample text loaded! You can now generate questions.")
+        
+        # Show sample text
+        with st.expander("📖 Sample Text Preview"):
+            st.text_area("Sample Text", sample_text, height=200)
+        
+        # Question generation for sample text
+        st.subheader("Generate Questions from Sample Text")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            question_types = st.multiselect(
+                "Select Question Types",
+                ["mcq", "1_mark", "2_mark", "3_mark", "5_mark"],
+                default=["mcq", "2_mark"],
+                key="sample_question_types"
+            )
+        
+        with col2:
+            num_questions = st.slider("Questions per type", 1, 10, 3, key="sample_num_questions")
+        
+        if st.button("🎯 Generate Questions from Sample", type="primary"):
+            if question_types:
+                all_questions = []
+                
+                progress_bar = st.progress(0)
+                total_types = len(question_types)
+                
+                for i, q_type in enumerate(question_types):
+                    with st.spinner(f"Generating {q_type} questions..."):
+                        questions = MistralAPI.generate_questions(sample_text, q_type, num_questions)
+                        all_questions.extend(questions)
+                    
+                    progress_bar.progress((i + 1) / total_types)
+                
+                st.session_state.questions = all_questions
+                
+                if all_questions:
+                    st.success(f"✅ Generated {len(all_questions)} questions!")
+                    
+                    # Display summary
+                    st.subheader("Generated Questions Summary")
+                    for q_type in question_types:
+                        type_questions = [q for q in all_questions if q.type == q_type]
+                        st.write(f"**{q_type.replace('_', ' ').title()}**: {len(type_questions)} questions")
+                else:
+                    st.error("❌ Failed to generate questions. Please try again.")
+            else:
+                st.warning("⚠️ Please select at least one question type.")
+    
+    st.markdown("---")
+    
     if uploaded_file:
+        # Display file information
+        st.info(f"📁 File selected: {uploaded_file.name}")
+        st.info(f"📏 File size: {uploaded_file.size} bytes")
+        
+        # Check file size (limit to 10MB)
+        if uploaded_file.size > 10 * 1024 * 1024:
+            st.error("❌ File too large. Please upload a file smaller than 10MB.")
+            return
+        
+        # PDF-specific debugging
+        if uploaded_file.name.lower().endswith('.pdf'):
+            st.info("🔍 PDF file detected - performing initial validation...")
+            
+            # Read first few bytes to check if it's a valid PDF
+            uploaded_file.seek(0)
+            first_bytes = uploaded_file.read(10)
+            uploaded_file.seek(0)  # Reset for processing
+            
+            if first_bytes.startswith(b'%PDF-'):
+                st.success("✅ Valid PDF file format detected")
+                pdf_version = first_bytes.decode('utf-8', errors='ignore')
+                st.info(f"📄 PDF version: {pdf_version}")
+            else:
+                st.error("❌ Invalid PDF file format")
+                st.error("The file does not appear to be a valid PDF document")
+                return
+        
         # Process file
         with st.spinner("Processing file..."):
             text = DocumentProcessor.process_uploaded_file(uploaded_file)
         
         if text:
-            st.success(f"✅ Extracted {len(text)} characters from {uploaded_file.name}")
+            st.success(f"✅ Successfully extracted {len(text)} characters from {uploaded_file.name}")
+            
+            # Show text quality check
+            if len(text) < 100:
+                st.warning("⚠️ Extracted text is very short. Please check if the file contains readable text.")
             
             # Show preview
-            with st.expander("Preview Text"):
-                st.text_area("Extracted Text", text[:500] + "..." if len(text) > 500 else text, height=200)
+            with st.expander("📖 Preview Extracted Text"):
+                preview_text = text[:1000] + "..." if len(text) > 1000 else text
+                st.text_area("Extracted Text", preview_text, height=200)
+                
+                # Show text statistics
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("Characters", len(text))
+                with col2:
+                    st.metric("Words", len(text.split()))
+                with col3:
+                    st.metric("Lines", len(text.split('\n')))
             
             # Question generation settings
             st.subheader("Question Generation Settings")
@@ -493,6 +815,13 @@ def upload_and_generate_page():
                         st.error("❌ Failed to generate questions. Please try again.")
                 else:
                     st.warning("⚠️ Please select at least one question type.")
+        else:
+            st.error("❌ Failed to extract text from the uploaded file.")
+            st.info("💡 Try the following:")
+            st.info("• Make sure the file is not corrupted")
+            st.info("• For PDFs, ensure they contain text (not just images)")
+            st.info("• Try converting to TXT format first")
+            st.info("• Check if the file is password protected")
 
 def configure_test_page():
     """Test configuration page"""
