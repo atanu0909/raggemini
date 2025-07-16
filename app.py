@@ -1,426 +1,816 @@
+"""
+Book-Based Question Generation & Assessment System
+A streamlined Streamlit app for generating and evaluating questions from book chapters.
+"""
+
 import streamlit as st
 import os
+import json
 import time
+import requests
 from datetime import datetime
-from src.config import APP_TITLE, APP_DESCRIPTION
-from src.utils.document_processor import DocumentProcessor
-from src.components.question_generator import QuestionGenerator
-from src.components.answer_evaluator import AnswerEvaluator
+from typing import Dict, List, Optional, Tuple
+import io
+from dataclasses import dataclass
+import base64
 
-# Configure page
+# External libraries for document processing and audio
+try:
+    import PyPDF2
+    import pypdf
+    PDF_AVAILABLE = True
+except ImportError:
+    PDF_AVAILABLE = False
+
+try:
+    from docx import Document
+    DOCX_AVAILABLE = True
+except ImportError:
+    DOCX_AVAILABLE = False
+
+try:
+    from gtts import gTTS
+    import speech_recognition as sr
+    from audio_recorder_streamlit import audio_recorder
+    AUDIO_AVAILABLE = True
+except ImportError:
+    AUDIO_AVAILABLE = False
+
+try:
+    from fpdf import FPDF
+    PDF_EXPORT_AVAILABLE = True
+except ImportError:
+    PDF_EXPORT_AVAILABLE = False
+
+# Configuration
 st.set_page_config(
-    page_title=APP_TITLE,
+    page_title="Book Question Generator",
     page_icon="📚",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Initialize components
-@st.cache_resource
-def get_components():
-    return {
-        'doc_processor': DocumentProcessor(),
-        'question_generator': QuestionGenerator(),
-        'answer_evaluator': AnswerEvaluator()
-    }
+# Constants
+MISTRAL_API_KEY = st.secrets.get("MISTRAL_API_KEY", os.getenv("MISTRAL_API_KEY", "ELvBe6YSxK0LgKpwnz2qG4nDE0tVhO6r"))
+MISTRAL_BASE_URL = "https://api.mistral.ai/v1"
+
+@dataclass
+class Question:
+    """Data class for storing question information"""
+    text: str
+    type: str
+    marks: int
+    options: Optional[Dict[str, str]] = None
+    correct_answer: Optional[str] = None
+    hint: Optional[str] = None
+
+class DocumentProcessor:
+    """Handles document processing for various file types"""
+    
+    @staticmethod
+    def extract_text_from_pdf(file_content: bytes) -> str:
+        """Extract text from PDF using multiple methods"""
+        text = ""
+        try:
+            if PDF_AVAILABLE:
+                reader = PyPDF2.PdfReader(io.BytesIO(file_content))
+                for page in reader.pages:
+                    text += page.extract_text() + "\n"
+            
+            if not text and PDF_AVAILABLE:
+                reader = pypdf.PdfReader(io.BytesIO(file_content))
+                for page in reader.pages:
+                    text += page.extract_text() + "\n"
+                    
+        except Exception as e:
+            st.error(f"Error extracting PDF text: {str(e)}")
+        
+        return text.strip()
+    
+    @staticmethod
+    def extract_text_from_docx(file_content: bytes) -> str:
+        """Extract text from DOCX file"""
+        text = ""
+        try:
+            if DOCX_AVAILABLE:
+                doc = Document(io.BytesIO(file_content))
+                for paragraph in doc.paragraphs:
+                    text += paragraph.text + "\n"
+        except Exception as e:
+            st.error(f"Error extracting DOCX text: {str(e)}")
+        
+        return text.strip()
+    
+    @staticmethod
+    def extract_text_from_txt(file_content: bytes) -> str:
+        """Extract text from TXT file"""
+        try:
+            return file_content.decode('utf-8')
+        except UnicodeDecodeError:
+            try:
+                return file_content.decode('latin-1')
+            except Exception as e:
+                st.error(f"Error reading text file: {str(e)}")
+                return ""
+    
+    @staticmethod
+    def process_uploaded_file(uploaded_file) -> str:
+        """Process uploaded file and extract text"""
+        if not uploaded_file:
+            return ""
+        
+        file_content = uploaded_file.read()
+        file_extension = uploaded_file.name.split('.')[-1].lower()
+        
+        if file_extension == 'pdf':
+            return DocumentProcessor.extract_text_from_pdf(file_content)
+        elif file_extension == 'docx':
+            return DocumentProcessor.extract_text_from_docx(file_content)
+        elif file_extension == 'txt':
+            return DocumentProcessor.extract_text_from_txt(file_content)
+        else:
+            st.error(f"Unsupported file type: {file_extension}")
+            return ""
+
+class MistralAPI:
+    """Handles Mistral AI API interactions"""
+    
+    @staticmethod
+    def generate_questions(text: str, question_type: str, num_questions: int = 5) -> List[Question]:
+        """Generate questions using Mistral AI"""
+        
+        if question_type == "mcq":
+            prompt = f"""
+            Generate {num_questions} multiple choice questions based on the following text.
+            
+            Text: {text[:2000]}...
+            
+            Return ONLY a JSON array with this exact format:
+            [
+                {{
+                    "question": "Question text here?",
+                    "options": {{
+                        "A": "Option A",
+                        "B": "Option B", 
+                        "C": "Option C",
+                        "D": "Option D"
+                    }},
+                    "correct_answer": "A",
+                    "hint": "Brief hint"
+                }}
+            ]
+            """
+        else:
+            marks = int(question_type.split('_')[0])
+            prompt = f"""
+            Generate {num_questions} subjective questions worth {marks} marks each based on the following text.
+            
+            Text: {text[:2000]}...
+            
+            Return ONLY a JSON array with this exact format:
+            [
+                {{
+                    "question": "Question text here?",
+                    "hint": "Brief hint for answering"
+                }}
+            ]
+            """
+        
+        try:
+            response = requests.post(
+                f"{MISTRAL_BASE_URL}/chat/completions",
+                headers={"Authorization": f"Bearer {MISTRAL_API_KEY}"},
+                json={
+                    "model": "mistral-small",
+                    "messages": [{"role": "user", "content": prompt}],
+                    "max_tokens": 1000,
+                    "temperature": 0.7
+                }
+            )
+            
+            if response.status_code == 200:
+                content = response.json()["choices"][0]["message"]["content"]
+                
+                # Extract JSON from response
+                start_idx = content.find('[')
+                end_idx = content.rfind(']') + 1
+                
+                if start_idx != -1 and end_idx != -1:
+                    json_str = content[start_idx:end_idx]
+                    questions_data = json.loads(json_str)
+                    
+                    questions = []
+                    for q_data in questions_data:
+                        marks = 1 if question_type == "mcq" else int(question_type.split('_')[0])
+                        question = Question(
+                            text=q_data["question"],
+                            type=question_type,
+                            marks=marks,
+                            options=q_data.get("options"),
+                            correct_answer=q_data.get("correct_answer"),
+                            hint=q_data.get("hint")
+                        )
+                        questions.append(question)
+                    
+                    return questions
+                        
+        except Exception as e:
+            st.error(f"Error generating questions: {str(e)}")
+        
+        return []
+    
+    @staticmethod
+    def evaluate_answer(question: Question, user_answer: str) -> Dict:
+        """Evaluate user's answer using Mistral AI"""
+        
+        if question.type == "mcq":
+            # Simple comparison for MCQ
+            correct = user_answer == question.correct_answer
+            score = question.marks if correct else 0
+            feedback = "Correct!" if correct else f"Incorrect. The correct answer is {question.correct_answer}."
+            
+            return {
+                "score": score,
+                "max_score": question.marks,
+                "feedback": feedback,
+                "correct": correct
+            }
+        else:
+            # Use AI for subjective evaluation
+            prompt = f"""
+            Evaluate this answer for the given question. Give a score out of {question.marks} marks.
+            
+            Question: {question.text}
+            Answer: {user_answer}
+            
+            Provide evaluation in JSON format:
+            {{
+                "score": <number>,
+                "feedback": "<detailed feedback>",
+                "suggestions": "<suggestions for improvement>"
+            }}
+            """
+            
+            try:
+                response = requests.post(
+                    f"{MISTRAL_BASE_URL}/chat/completions",
+                    headers={"Authorization": f"Bearer {MISTRAL_API_KEY}"},
+                    json={
+                        "model": "mistral-small",
+                        "messages": [{"role": "user", "content": prompt}],
+                        "max_tokens": 300,
+                        "temperature": 0.3
+                    }
+                )
+                
+                if response.status_code == 200:
+                    content = response.json()["choices"][0]["message"]["content"]
+                    
+                    # Extract JSON from response
+                    start_idx = content.find('{')
+                    end_idx = content.rfind('}') + 1
+                    
+                    if start_idx != -1 and end_idx != -1:
+                        json_str = content[start_idx:end_idx]
+                        eval_data = json.loads(json_str)
+                        
+                        return {
+                            "score": eval_data.get("score", 0),
+                            "max_score": question.marks,
+                            "feedback": eval_data.get("feedback", "No feedback available"),
+                            "suggestions": eval_data.get("suggestions", ""),
+                            "correct": eval_data.get("score", 0) == question.marks
+                        }
+                        
+            except Exception as e:
+                st.error(f"Error evaluating answer: {str(e)}")
+            
+            # Fallback evaluation
+            return {
+                "score": question.marks // 2,  # Give half marks as fallback
+                "max_score": question.marks,
+                "feedback": "Answer submitted successfully. Manual review may be needed.",
+                "correct": False
+            }
+
+class AudioProcessor:
+    """Handles audio-related functionality"""
+    
+    @staticmethod
+    def text_to_speech(text: str) -> bytes:
+        """Convert text to speech"""
+        if not AUDIO_AVAILABLE:
+            return b""
+        
+        try:
+            clean_text = text.replace("**", "").replace("*", "").strip()
+            if len(clean_text) > 500:
+                clean_text = clean_text[:500] + "..."
+            
+            tts = gTTS(text=clean_text, lang='en', slow=False)
+            audio_buffer = io.BytesIO()
+            tts.write_to_fp(audio_buffer)
+            audio_buffer.seek(0)
+            return audio_buffer.read()
+        except Exception as e:
+            st.error(f"Error generating speech: {str(e)}")
+            return b""
+    
+    @staticmethod
+    def speech_to_text(audio_data: bytes) -> str:
+        """Convert speech to text"""
+        if not AUDIO_AVAILABLE or not audio_data:
+            return ""
+        
+        try:
+            import tempfile
+            
+            with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as temp_file:
+                temp_file.write(audio_data)
+                temp_file.flush()
+                
+                recognizer = sr.Recognizer()
+                with sr.AudioFile(temp_file.name) as source:
+                    audio = recognizer.record(source)
+                
+                text = recognizer.recognize_google(audio)
+                os.unlink(temp_file.name)
+                
+                return text
+        except Exception as e:
+            st.error(f"Error recognizing speech: {str(e)}")
+            return ""
+
+class PDFExporter:
+    """Handles PDF export functionality"""
+    
+    @staticmethod
+    def create_questions_pdf(questions: List[Question], title: str) -> bytes:
+        """Create PDF with questions"""
+        if not PDF_EXPORT_AVAILABLE:
+            return b""
+        
+        try:
+            pdf = FPDF()
+            pdf.add_page()
+            pdf.set_font("Arial", "B", 16)
+            pdf.cell(0, 10, title, ln=True, align="C")
+            pdf.ln(10)
+            
+            for i, question in enumerate(questions, 1):
+                pdf.set_font("Arial", "B", 12)
+                pdf.cell(0, 10, f"Question {i} ({question.marks} marks):", ln=True)
+                
+                pdf.set_font("Arial", "", 11)
+                question_text = question.text.encode('latin-1', 'replace').decode('latin-1')
+                pdf.multi_cell(0, 5, question_text)
+                
+                if question.options:
+                    pdf.ln(2)
+                    for key, value in question.options.items():
+                        option_text = f"{key}. {value}".encode('latin-1', 'replace').decode('latin-1')
+                        pdf.cell(0, 5, option_text, ln=True)
+                
+                pdf.ln(5)
+            
+            pdf_output = pdf.output(dest="S")
+            if isinstance(pdf_output, str):
+                return pdf_output.encode("latin-1")
+            else:
+                return bytes(pdf_output)
+        except Exception as e:
+            st.error(f"Error creating PDF: {str(e)}")
+            return b""
 
 def main():
-    components = get_components()
+    """Main application function"""
     
-    # Header
-    st.title(APP_TITLE)
-    st.markdown(APP_DESCRIPTION)
+    st.title("📚 Book Question Generator & Assessment")
+    st.markdown("Upload book chapters and generate AI-powered questions with evaluation")
     
     # Initialize session state
-    if 'test_start_time' not in st.session_state:
-        st.session_state['test_start_time'] = None
+    if 'questions' not in st.session_state:
+        st.session_state.questions = []
+    if 'test_active' not in st.session_state:
+        st.session_state.test_active = False
+    if 'current_question' not in st.session_state:
+        st.session_state.current_question = 0
+    if 'user_answers' not in st.session_state:
+        st.session_state.user_answers = {}
+    if 'test_results' not in st.session_state:
+        st.session_state.test_results = []
     
-    # Sidebar for navigation
-    st.sidebar.title("🧭 Navigation")
+    # Sidebar navigation
+    st.sidebar.title("Navigation")
     page = st.sidebar.selectbox(
-        "Choose a page",
-        ["📁 Upload & Generate", "⚙️ Configure Test", "✍️ Take Test", "📊 View Results", "📚 Test History"]
+        "Select Page",
+        ["📁 Upload & Generate", "⚙️ Configure Test", "✍️ Take Test", "📊 Results"]
     )
     
     if page == "📁 Upload & Generate":
-        upload_and_generate_page(components)
+        upload_and_generate_page()
     elif page == "⚙️ Configure Test":
-        configure_test_page(components)
+        configure_test_page()
     elif page == "✍️ Take Test":
-        take_test_page(components)
-    elif page == "📊 View Results":
-        view_results_page(components)
-    elif page == "📚 Test History":
-        test_history_page(components)
+        take_test_page()
+    elif page == "📊 Results":
+        results_page()
 
-def upload_and_generate_page(components):
-    st.header("📁 Upload Book Chapter & Generate Questions")
+def upload_and_generate_page():
+    """Upload and question generation page"""
+    st.header("📁 Upload & Generate Questions")
     
     # File upload
     uploaded_file = st.file_uploader(
-        "Upload your book chapter (PDF, DOCX, or TXT)",
+        "Choose a file",
         type=['pdf', 'docx', 'txt'],
-        help="Upload a chapter from your book to generate questions"
+        help="Upload your book chapter"
     )
     
-    if uploaded_file is not None:
-        # Process uploaded file
-        with st.spinner("Processing uploaded file..."):
-            text = components['doc_processor'].process_uploaded_file(uploaded_file)
+    if uploaded_file:
+        # Process file
+        with st.spinner("Processing file..."):
+            text = DocumentProcessor.process_uploaded_file(uploaded_file)
         
         if text:
-            st.success("✅ File processed successfully!")
+            st.success(f"✅ Extracted {len(text)} characters from {uploaded_file.name}")
             
-            # Show text preview
-            with st.expander("📖 Preview extracted text"):
-                st.text_area("Extracted text", text[:1000] + "..." if len(text) > 1000 else text, height=200)
+            # Show preview
+            with st.expander("Preview Text"):
+                st.text_area("Extracted Text", text[:500] + "..." if len(text) > 500 else text, height=200)
             
-            # Split into chapters
-            chapters = components['doc_processor'].split_into_chapters(text)
+            # Question generation settings
+            st.subheader("Question Generation Settings")
             
-            if len(chapters) > 1:
-                st.subheader("📚 Detected Chapters")
-                selected_chapter = st.selectbox("Select a chapter to generate questions for:", list(chapters.keys()))
-                chapter_text = chapters[selected_chapter]
-            else:
-                selected_chapter = uploaded_file.name.replace('.pdf', '').replace('.docx', '').replace('.txt', '')
-                chapter_text = text
+            col1, col2 = st.columns(2)
             
-            # Generate questions
+            with col1:
+                question_types = st.multiselect(
+                    "Select Question Types",
+                    ["mcq", "1_mark", "2_mark", "3_mark", "5_mark"],
+                    default=["mcq", "2_mark"]
+                )
+            
+            with col2:
+                num_questions = st.slider("Questions per type", 1, 10, 3)
+            
             if st.button("🎯 Generate Questions", type="primary"):
-                with st.spinner("Generating questions... This may take a few minutes."):
-                    questions = components['question_generator'].generate_questions_for_chapter(
-                        chapter_text, selected_chapter
-                    )
-                
-                if questions:
-                    st.success("✅ Questions generated successfully!")
+                if question_types:
+                    all_questions = []
                     
-                    # Display question summary
-                    st.subheader("📊 Generated Questions Summary")
-                    col1, col2, col3, col4, col5 = st.columns(5)
+                    progress_bar = st.progress(0)
+                    total_types = len(question_types)
                     
-                    with col1:
-                        st.metric("MCQ", len(questions['mcq']))
-                    with col2:
-                        st.metric("1 Mark", len(questions['1_mark']))
-                    with col3:
-                        st.metric("2 Mark", len(questions['2_mark']))
-                    with col4:
-                        st.metric("3 Mark", len(questions['3_mark']))
-                    with col5:
-                        st.metric("5 Mark", len(questions['5_mark']))
+                    for i, q_type in enumerate(question_types):
+                        with st.spinner(f"Generating {q_type} questions..."):
+                            questions = MistralAPI.generate_questions(text, q_type, num_questions)
+                            all_questions.extend(questions)
+                        
+                        progress_bar.progress((i + 1) / total_types)
                     
-                    # Save questions to session state (primary storage)
-                    st.session_state['current_questions'] = questions
-                    st.session_state['current_chapter'] = selected_chapter
+                    st.session_state.questions = all_questions
                     
-                    # Also save to persistent storage for later access
-                    if 'saved_questions' not in st.session_state:
-                        st.session_state['saved_questions'] = {}
-                    st.session_state['saved_questions'][selected_chapter] = questions
-                    
-                    # Try to save to file (if possible in environment)
-                    try:
-                        components['question_generator'].save_questions_to_file(questions, selected_chapter)
-                    except Exception as e:
-                        st.warning(f"Could not save to file: {str(e)}")
-                    
-                    # PDF Export button
-                    components['question_generator'].create_pdf_download_button(questions, selected_chapter)
-                    
-                    st.info("✨ Questions saved! Now go to 'Configure Test' to create your custom test.")
+                    if all_questions:
+                        st.success(f"✅ Generated {len(all_questions)} questions!")
+                        
+                        # Display summary
+                        st.subheader("Generated Questions Summary")
+                        for q_type in question_types:
+                            type_questions = [q for q in all_questions if q.type == q_type]
+                            st.write(f"**{q_type.replace('_', ' ').title()}**: {len(type_questions)} questions")
+                        
+                        # Export options
+                        if PDF_EXPORT_AVAILABLE:
+                            pdf_data = PDFExporter.create_questions_pdf(all_questions, f"Questions from {uploaded_file.name}")
+                            if pdf_data:
+                                st.download_button(
+                                    "📄 Download PDF",
+                                    pdf_data,
+                                    f"questions_{uploaded_file.name}.pdf",
+                                    "application/pdf"
+                                )
+                    else:
+                        st.error("❌ Failed to generate questions. Please try again.")
+                else:
+                    st.warning("⚠️ Please select at least one question type.")
 
-def configure_test_page(components):
+def configure_test_page():
+    """Test configuration page"""
     st.header("⚙️ Configure Test")
     
-    # Check for saved questions in session state
-    if 'saved_questions' not in st.session_state or not st.session_state['saved_questions']:
-        st.warning("⚠️ No question sets available. Please upload a chapter and generate questions first.")
+    if not st.session_state.questions:
+        st.warning("⚠️ No questions available. Please generate questions first.")
         return
     
-    # Get available chapters from session state
-    available_chapters = list(st.session_state['saved_questions'].keys())
+    st.success(f"✅ {len(st.session_state.questions)} questions available")
     
-    # Select question set
-    selected_chapter = st.selectbox("📚 Select a chapter:", available_chapters)
+    # Test settings
+    col1, col2 = st.columns(2)
     
-    if selected_chapter:
-        # Load questions from session state
-        questions = st.session_state['saved_questions'][selected_chapter]
+    with col1:
+        test_name = st.text_input("Test Name", "Chapter Assessment")
+        time_limit = st.number_input("Time Limit (minutes)", 5, 120, 30)
+    
+    with col2:
+        randomize = st.checkbox("Randomize Questions", True)
+        show_hints = st.checkbox("Allow Hints", True)
+    
+    # Question selection
+    st.subheader("Select Questions")
+    
+    available_types = list(set(q.type for q in st.session_state.questions))
+    
+    selected_questions = []
+    for q_type in available_types:
+        type_questions = [q for q in st.session_state.questions if q.type == q_type]
         
-        if not questions:
-            st.error("❌ Failed to load questions.")
-            return
-        
-        st.success(f"✅ Selected: {questions['chapter_name']}")
-        
-        # Display test configuration interface
-        config = components['question_generator'].display_test_configuration(questions)
-        
-        if config and st.button("🚀 Create Custom Test", type="primary"):
-            # Add chapter name to config
-            config['chapter_name'] = selected_chapter
+        with st.expander(f"{q_type.replace('_', ' ').title()} Questions ({len(type_questions)} available)"):
+            num_select = st.slider(
+                f"Select {q_type} questions",
+                0, len(type_questions), 
+                min(3, len(type_questions)),
+                key=f"select_{q_type}"
+            )
             
-            custom_test = components['question_generator'].create_custom_test(questions, config)
-            
-            st.session_state['custom_test'] = custom_test
-            st.session_state['test_config'] = config
-            
-            st.success("✅ Custom test created!")
-            st.info("📝 Go to 'Take Test' to start your custom test.")
+            if num_select > 0:
+                if randomize:
+                    import random
+                    selected = random.sample(type_questions, num_select)
+                else:
+                    selected = type_questions[:num_select]
+                
+                selected_questions.extend(selected)
+    
+    if selected_questions:
+        st.info(f"📝 Selected {len(selected_questions)} questions")
+        
+        total_marks = sum(q.marks for q in selected_questions)
+        st.metric("Total Marks", total_marks)
+        
+        if st.button("🚀 Start Test", type="primary"):
+            st.session_state.test_questions = selected_questions
+            st.session_state.test_config = {
+                "name": test_name,
+                "time_limit": time_limit,
+                "show_hints": show_hints,
+                "total_marks": total_marks
+            }
+            st.session_state.test_active = True
+            st.session_state.current_question = 0
+            st.session_state.user_answers = {}
+            st.session_state.test_start_time = time.time()
+            st.rerun()
 
-def take_test_page(components):
+def take_test_page():
+    """Test taking page"""
     st.header("✍️ Take Test")
     
-    # Check if custom test exists
-    if 'custom_test' in st.session_state:
-        display_custom_test(components)
-    else:
-        st.warning("⚠️ No test configured. Please go to 'Configure Test' first.")
-
-def display_custom_test(components):
-    custom_test = st.session_state['custom_test']
-    test_config = st.session_state.get('test_config', {})
-    
-    st.subheader(f"📝 {custom_test.get('test_name', 'Custom Test')}")
-    
-    # Test info
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.metric("📚 Chapter", custom_test.get('chapter_name', 'Unknown'))
-    with col2:
-        st.metric("📝 Questions", custom_test.get('total_questions', 0))
-    with col3:
-        st.metric("📊 Total Marks", custom_test.get('total_marks', 0))
-    with col4:
-        st.metric("⏰ Time Limit", f"{custom_test.get('time_limit', 60)} min")
-    
-    # User information
-    if 'user_name' not in st.session_state:
-        st.session_state['user_name'] = st.text_input("👤 Enter your name:", value="Anonymous")
-    
-    # Start test
-    if 'test_started' not in st.session_state:
-        st.session_state['test_started'] = False
-    
-    if not st.session_state['test_started']:
-        st.markdown("---")
-        st.subheader("📋 Test Instructions")
-        st.markdown("""
-        - **Time Limit**: You have a limited time to complete the test
-        - **Audio Support**: Use the 🔊 button to listen to questions
-        - **Voice Answers**: Use the 🎤 button to answer with voice
-        - **Skip Questions**: Use the ⏭️ button to skip questions
-        - **Hints**: Use the ❓ button for hints on difficult questions
-        - **Navigation**: Use Previous/Next buttons to navigate between questions
-        """)
-        
-        if st.button("🚀 Start Test", type="primary", use_container_width=True):
-            st.session_state['test_started'] = True
-            st.session_state['test_start_time'] = time.time()
-            st.session_state['current_question_index'] = 0
-            st.session_state['user_answers'] = {}
-            st.session_state['test_results'] = []
-            st.session_state['skipped_questions'] = []
-            st.rerun()
-    
-    else:
-        # Display test interface
-        display_test_interface(components, custom_test, test_config)
-
-def display_test_interface(components, custom_test, test_config):
-    questions = custom_test['questions']
-    current_index = st.session_state.get('current_question_index', 0)
-    
-    # Timer
-    if st.session_state['test_start_time']:
-        elapsed_time = time.time() - st.session_state['test_start_time']
-        remaining_time = (test_config['time_limit'] * 60) - elapsed_time
-        
-        if remaining_time <= 0:
-            st.error("⏰ Time's up! Test completed.")
-            complete_test(components, custom_test)
-            return
-        
-        # Display timer
-        minutes = int(remaining_time // 60)
-        seconds = int(remaining_time % 60)
-        
-        timer_color = "red" if remaining_time < 300 else "orange" if remaining_time < 600 else "green"
-        st.markdown(f"<div style='text-align: center; color: {timer_color}; font-size: 24px; font-weight: bold;'>⏰ Time Remaining: {minutes:02d}:{seconds:02d}</div>", unsafe_allow_html=True)
-    
-    # Check if test is completed
-    if current_index >= len(questions):
-        complete_test(components, custom_test)
+    if not st.session_state.test_active:
+        st.warning("⚠️ No active test. Please configure a test first.")
         return
     
-    current_q = questions[current_index]
-    question = current_q['question']
-    q_type = current_q['type']
+    if 'test_questions' not in st.session_state:
+        st.error("❌ Test configuration error. Please reconfigure the test.")
+        return
     
-    # Display question with enhanced features
-    voice_answer = components['question_generator'].display_question_with_enhanced_features(
-        question, q_type, current_index, len(questions)
-    )
+    questions = st.session_state.test_questions
+    config = st.session_state.test_config
+    current_idx = st.session_state.current_question
     
-    # Handle voice answer
-    if voice_answer and voice_answer != "SKIP":
-        st.session_state['user_answers'][current_index] = voice_answer
-        st.success(f"✅ Voice answer recorded: {voice_answer}")
-    elif voice_answer == "SKIP":
-        st.session_state['skipped_questions'].append(current_index)
-        st.info("⏭️ Question skipped")
+    # Timer with auto-refresh
+    elapsed_time = time.time() - st.session_state.test_start_time
+    remaining_time = (config['time_limit'] * 60) - elapsed_time
     
-    # Get user answer
-    answer_key = f"answer_{current_index}"
-    user_answer = st.session_state['user_answers'].get(current_index, "")
+    if remaining_time <= 0:
+        st.error("⏰ Time's up!")
+        finish_test()
+        return
     
-    if q_type == 'mcq':
-        if not voice_answer:
-            user_answer = st.radio(
-                "Select your answer:",
-                options=list(question['options'].keys()),
-                key=answer_key,
-                index=None if not user_answer else list(question['options'].keys()).index(user_answer)
-            )
+    # Display timer
+    minutes = int(remaining_time // 60)
+    seconds = int(remaining_time % 60)
+    
+    timer_color = "red" if remaining_time < 300 else "orange" if remaining_time < 600 else "green"
+    
+    st.markdown(f"""
+    <div style='text-align: center; color: {timer_color}; font-size: 24px; font-weight: bold;'>
+        ⏰ Time Remaining: {minutes:02d}:{seconds:02d}
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Test progress
+    progress = (current_idx + 1) / len(questions)
+    st.progress(progress)
+    st.write(f"Question {current_idx + 1} of {len(questions)}")
+    
+    if current_idx >= len(questions):
+        finish_test()
+        return
+    
+    question = questions[current_idx]
+    
+    # Display question
+    st.subheader(f"Question {current_idx + 1} ({question.marks} marks)")
+    st.write(question.text)
+    
+    # Audio features with improved functionality
+    if AUDIO_AVAILABLE:
+        st.markdown("---")
+        st.subheader("🎧 Audio Features")
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            if st.button("🔊 Listen to Question", use_container_width=True):
+                with st.spinner("Generating audio..."):
+                    audio_data = AudioProcessor.text_to_speech(question.text)
+                    if audio_data:
+                        st.audio(audio_data, format='audio/mp3')
+                        st.success("🎵 Audio generated successfully!")
+                    else:
+                        st.error("❌ Failed to generate audio")
+        
+        with col2:
+            if st.button("🎤 Record Answer", use_container_width=True):
+                st.info("🎤 Click the microphone below to record your answer")
+                audio_data = audio_recorder(
+                    text="Click to record",
+                    recording_color="#e87070",
+                    neutral_color="#6aa36f",
+                    icon_name="microphone",
+                    icon_size="3x"
+                )
+                
+                if audio_data:
+                    st.info("🔄 Processing your voice...")
+                    voice_answer = AudioProcessor.speech_to_text(audio_data)
+                    if voice_answer:
+                        st.session_state.user_answers[current_idx] = voice_answer
+                        st.success(f"✅ Voice answer recorded: {voice_answer}")
+                    else:
+                        st.error("❌ Could not understand the audio. Please try again.")
+        
+        with col3:
+            if st.button("🔍 Preview Answer", use_container_width=True):
+                current_answer = st.session_state.user_answers.get(current_idx, "")
+                if current_answer:
+                    st.info(f"📝 Current answer: {current_answer}")
+                else:
+                    st.warning("⚠️ No answer recorded yet")
+    
     else:
-        if not voice_answer:
-            user_answer = st.text_area(
-                "Enter your answer:",
-                value=user_answer,
-                height=150,
-                key=answer_key,
-                help="Type your answer here or use voice input"
-            )
+        st.warning("🔇 Audio features not available. Please install audio dependencies.")
     
-    # Store answer
-    if user_answer:
-        st.session_state['user_answers'][current_index] = user_answer
+    st.markdown("---")
+    
+    # Answer input
+    user_answer = st.session_state.user_answers.get(current_idx, "")
+    
+    if question.type == "mcq":
+        if question.options:
+            answer = st.radio(
+                "Select your answer:",
+                list(question.options.keys()),
+                format_func=lambda x: f"{x}. {question.options[x]}",
+                key=f"mcq_{current_idx}"
+            )
+            if answer:
+                st.session_state.user_answers[current_idx] = answer
+    else:
+        answer = st.text_area(
+            "Your answer:",
+            value=user_answer,
+            key=f"text_{current_idx}",
+            height=150
+        )
+        if answer:
+            st.session_state.user_answers[current_idx] = answer
+    
+    # Hint
+    if config['show_hints'] and question.hint:
+        with st.expander("💡 Hint"):
+            st.write(question.hint)
     
     # Navigation
-    st.markdown("---")
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2, col3 = st.columns(3)
     
     with col1:
-        if current_index > 0:
-            if st.button("⬅️ Previous", use_container_width=True):
-                st.session_state['current_question_index'] = current_index - 1
+        if current_idx > 0:
+            if st.button("⬅️ Previous"):
+                st.session_state.current_question = current_idx - 1
                 st.rerun()
     
     with col2:
-        if user_answer and st.button("✅ Submit & Next", type="primary", use_container_width=True):
-            # Evaluate answer
-            with st.spinner("Evaluating answer..."):
-                result = components['answer_evaluator'].evaluate_answer(question, user_answer, q_type)
-            
-            # Store result
-            st.session_state['test_results'].append({
-                'question_index': current_index,
-                'question': question,
-                'question_type': q_type,
-                'user_answer': user_answer,
-                'evaluation': result
-            })
-            
-            # Show evaluation
-            score, max_score = components['answer_evaluator'].display_evaluation_result(result, q_type, current_index)
-            
-            # Move to next question
-            if current_index + 1 < len(questions):
-                st.session_state['current_question_index'] = current_index + 1
-                time.sleep(2)  # Brief pause to show evaluation
+        if current_idx < len(questions) - 1:
+            if st.button("➡️ Next"):
+                st.session_state.current_question = current_idx + 1
                 st.rerun()
-            else:
-                st.success("🎉 All questions completed!")
-                if st.button("🏁 Finish Test", type="primary"):
-                    complete_test(components, custom_test)
     
     with col3:
-        if current_index + 1 < len(questions):
-            if st.button("⏭️ Next", use_container_width=True):
-                st.session_state['current_question_index'] = current_index + 1
-                st.rerun()
-    
-    with col4:
-        if st.button("🏁 Finish Test", use_container_width=True):
-            complete_test(components, custom_test)
+        if st.button("🏁 Finish Test"):
+            finish_test()
 
-def complete_test(components, custom_test):
-    st.header("🎉 Test Completed!")
+def finish_test():
+    """Finish the test and show results"""
+    st.session_state.test_active = False
     
-    results = st.session_state.get('test_results', [])
-    user_name = st.session_state.get('user_name', 'Anonymous')
+    questions = st.session_state.test_questions
+    answers = st.session_state.user_answers
     
-    # Calculate time taken
-    if st.session_state['test_start_time']:
-        time_taken = time.time() - st.session_state['test_start_time']
-        time_taken_minutes = int(time_taken // 60)
-        time_taken_seconds = int(time_taken % 60)
+    results = []
+    total_score = 0
+    max_score = 0
+    
+    with st.spinner("Evaluating answers..."):
+        for i, question in enumerate(questions):
+            user_answer = answers.get(i, "")
+            
+            if user_answer:
+                evaluation = MistralAPI.evaluate_answer(question, user_answer)
+                total_score += evaluation['score']
+            else:
+                evaluation = {
+                    'score': 0,
+                    'max_score': question.marks,
+                    'feedback': 'No answer provided',
+                    'correct': False
+                }
+            
+            max_score += question.marks
+            results.append({
+                'question': question,
+                'user_answer': user_answer,
+                'evaluation': evaluation
+            })
+    
+    st.session_state.test_results = results
+    st.session_state.final_score = total_score
+    st.session_state.max_possible_score = max_score
+    
+    st.rerun()
+
+def results_page():
+    """Results display page"""
+    st.header("📊 Test Results")
+    
+    if not st.session_state.test_results:
+        st.warning("⚠️ No test results available. Please take a test first.")
+        return
+    
+    results = st.session_state.test_results
+    total_score = st.session_state.final_score
+    max_score = st.session_state.max_possible_score
+    
+    # Overall score
+    percentage = (total_score / max_score) * 100 if max_score > 0 else 0
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.metric("Score", f"{total_score}/{max_score}")
+    
+    with col2:
+        st.metric("Percentage", f"{percentage:.1f}%")
+    
+    with col3:
+        grade = "A" if percentage >= 90 else "B" if percentage >= 80 else "C" if percentage >= 70 else "D" if percentage >= 60 else "F"
+        st.metric("Grade", grade)
+    
+    # Detailed results
+    st.subheader("Detailed Results")
+    
+    for i, result in enumerate(results):
+        question = result['question']
+        user_answer = result['user_answer']
+        evaluation = result['evaluation']
         
-        st.info(f"⏱️ Time taken: {time_taken_minutes}:{time_taken_seconds:02d}")
+        with st.expander(f"Question {i+1} - Score: {evaluation['score']}/{evaluation['max_score']}"):
+            st.write(f"**Question:** {question.text}")
+            
+            if question.type == "mcq" and question.options:
+                st.write("**Options:**")
+                for key, value in question.options.items():
+                    st.write(f"  {key}. {value}")
+                if question.correct_answer:
+                    st.write(f"**Correct Answer:** {question.correct_answer}")
+            
+            st.write(f"**Your Answer:** {user_answer if user_answer else 'Not answered'}")
+            st.write(f"**Feedback:** {evaluation['feedback']}")
+            
+            if 'suggestions' in evaluation and evaluation['suggestions']:
+                st.write(f"**Suggestions:** {evaluation['suggestions']}")
     
-    # Display summary
-    evaluation_results = [r['evaluation'] for r in results]
-    components['answer_evaluator'].display_test_summary(evaluation_results)
-    
-    # Save results
-    components['answer_evaluator'].save_test_results(
-        evaluation_results, 
-        custom_test['chapter_name'], 
-        user_name
-    )
-    
-    # Show skipped questions
-    if st.session_state.get('skipped_questions'):
-        st.subheader("⏭️ Skipped Questions")
-        st.write(f"You skipped {len(st.session_state['skipped_questions'])} questions")
-    
-    # Reset test state
-    if st.button("🔄 Take Another Test", type="primary"):
-        # Clean up session state
-        for key in ['test_started', 'custom_test', 'test_config', 'current_question_index', 
-                   'user_answers', 'test_results', 'test_start_time', 'skipped_questions']:
+    # Reset for new test
+    if st.button("🔄 Take New Test"):
+        # Clear test-related session state
+        keys_to_clear = ['test_results', 'final_score', 'max_possible_score', 
+                        'test_questions', 'test_config', 'user_answers', 'current_question']
+        for key in keys_to_clear:
             if key in st.session_state:
                 del st.session_state[key]
         
-        # Clean up audio files
-        components['question_generator'].cleanup_audio_files()
-        
         st.rerun()
-
-def view_results_page(components):
-    st.header("📊 View Results")
-    
-    # Show latest test results if available
-    if 'test_results' in st.session_state:
-        results = st.session_state['test_results']
-        if results:
-            st.subheader("📋 Latest Test Results")
-            
-            for i, result in enumerate(results):
-                with st.expander(f"Question {i + 1} - {result['question_type'].replace('_', ' ').title()}"):
-                    st.write(f"**Question:** {result['question']['question']}")
-                    st.write(f"**Your Answer:** {result['user_answer']}")
-                    st.write(f"**Score:** {result['evaluation']['score']}/{result['evaluation']['max_score']}")
-                    st.write(f"**Feedback:** {result['evaluation']['feedback']}")
-                    
-                    if 'suggestions' in result['evaluation']:
-                        st.write(f"**Suggestions:** {result['evaluation']['suggestions']}")
-    else:
-        st.info("📝 No recent test results available.")
-
-def test_history_page(components):
-    st.header("📚 Test History")
-    
-    user_name = st.text_input("👤 Enter your name to view history:", value="Anonymous")
-    
-    if st.button("🔍 Load History"):
-        history = components['answer_evaluator'].get_test_history(user_name)
-        if history:
-            components['answer_evaluator'].display_test_history(history)
-        else:
-            st.info(f"📝 No test history found for {user_name}")
 
 if __name__ == "__main__":
     main()
+
