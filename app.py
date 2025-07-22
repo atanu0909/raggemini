@@ -4,6 +4,7 @@ A streamlined Streamlit app for generating and evaluating questions from book ch
 """
 
 import streamlit as st
+import google.generativeai as genai
 import os
 import json
 import time
@@ -70,8 +71,11 @@ st.set_page_config(
 )
 
 # Constants
+
+# Model API Keys
 MISTRAL_API_KEY = st.secrets.get("MISTRAL_API_KEY", os.getenv("MISTRAL_API_KEY", "ELvBe6YSxK0LgKpwnz2qG4nDE0tVhO6r"))
 MISTRAL_BASE_URL = "https://api.mistral.ai/v1"
+GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY", os.getenv("GEMINI_API_KEY", "AIzaSyC87pphG3Esb3UnRiMQiAscJ931IKk3RkM"))
 
 @dataclass
 class Question:
@@ -316,13 +320,13 @@ class DocumentProcessor:
             st.error(f"❌ Error processing file: {str(e)}")
             return ""
 
-class MistralAPI:
-    """Handles Mistral AI API interactions"""
-    
+
+# Unified AI API for Mistral and Gemini
+class AIModelAPI:
+    """Handles both Mistral and Gemini AI API interactions"""
     @staticmethod
-    def generate_questions(text: str, question_type: str, num_questions: int = 5) -> List[Question]:
-        """Generate questions using Mistral AI"""
-        
+    def generate_questions(text: str, question_type: str, num_questions: int = 5, model_choice: str = "Mistral") -> List[Question]:
+        """Generate questions using selected AI model"""
         if question_type == "mcq":
             prompt = f"""
             Generate {num_questions} multiple choice questions based on the following text.
@@ -359,60 +363,60 @@ class MistralAPI:
                 }}
             ]
             """
-        
+
         try:
-            response = requests.post(
-                f"{MISTRAL_BASE_URL}/chat/completions",
-                headers={"Authorization": f"Bearer {MISTRAL_API_KEY}"},
-                json={
-                    "model": "mistral-small",
-                    "messages": [{"role": "user", "content": prompt}],
-                    "max_tokens": 1000,
-                    "temperature": 0.7
-                }
-            )
-            
-            if response.status_code == 200:
-                content = response.json()["choices"][0]["message"]["content"]
-                
-                # Extract JSON from response
-                start_idx = content.find('[')
-                end_idx = content.rfind(']') + 1
-                
-                if start_idx != -1 and end_idx != -1:
-                    json_str = content[start_idx:end_idx]
-                    questions_data = json.loads(json_str)
-                    
-                    questions = []
-                    for q_data in questions_data:
-                        marks = 1 if question_type == "mcq" else int(question_type.split('_')[0])
-                        question = Question(
-                            text=q_data["question"],
-                            type=question_type,
-                            marks=marks,
-                            options=q_data.get("options"),
-                            correct_answer=q_data.get("correct_answer"),
-                            hint=q_data.get("hint")
-                        )
-                        questions.append(question)
-                    
-                    return questions
-                        
+            if model_choice == "Gemini":
+                genai.configure(api_key=GEMINI_API_KEY)
+                model = genai.GenerativeModel('gemini-2.5-flash')
+                response = model.generate_content(prompt)
+                content = response.text
+            else:
+                response = requests.post(
+                    f"{MISTRAL_BASE_URL}/chat/completions",
+                    headers={"Authorization": f"Bearer {MISTRAL_API_KEY}"},
+                    json={
+                        "model": "mistral-small",
+                        "messages": [{"role": "user", "content": prompt}],
+                        "max_tokens": 1000,
+                        "temperature": 0.7
+                    }
+                )
+                if response.status_code == 200:
+                    content = response.json()["choices"][0]["message"]["content"]
+                else:
+                    st.error(f"Mistral API error: {response.text}")
+                    return []
+
+            # Extract JSON from response
+            start_idx = content.find('[')
+            end_idx = content.rfind(']') + 1
+            if start_idx != -1 and end_idx != -1:
+                json_str = content[start_idx:end_idx]
+                questions_data = json.loads(json_str)
+                questions = []
+                for q_data in questions_data:
+                    marks = 1 if question_type == "mcq" else int(question_type.split('_')[0])
+                    question = Question(
+                        text=q_data["question"],
+                        type=question_type,
+                        marks=marks,
+                        options=q_data.get("options"),
+                        correct_answer=q_data.get("correct_answer"),
+                        hint=q_data.get("hint")
+                    )
+                    questions.append(question)
+                return questions
         except Exception as e:
             st.error(f"Error generating questions: {str(e)}")
-        
         return []
-    
+
     @staticmethod
-    def evaluate_answer(question: Question, user_answer: str) -> Dict:
-        """Evaluate user's answer using Mistral AI"""
-        
+    def evaluate_answer(question: Question, user_answer: str, model_choice: str = "Mistral") -> Dict:
+        """Evaluate user's answer using selected AI model"""
         if question.type == "mcq":
-            # Simple comparison for MCQ
             correct = user_answer == question.correct_answer
             score = question.marks if correct else 0
             feedback = "Correct!" if correct else f"Incorrect. The correct answer is {question.correct_answer}."
-            
             return {
                 "score": score,
                 "max_score": question.marks,
@@ -420,7 +424,6 @@ class MistralAPI:
                 "correct": correct
             }
         else:
-            # Use AI for subjective evaluation
             prompt = f"""
             Evaluate this answer for the given question. Give a score out of {question.marks} marks.
             
@@ -434,44 +437,49 @@ class MistralAPI:
                 "suggestions": "<suggestions for improvement>"
             }}
             """
-            
             try:
-                response = requests.post(
-                    f"{MISTRAL_BASE_URL}/chat/completions",
-                    headers={"Authorization": f"Bearer {MISTRAL_API_KEY}"},
-                    json={
-                        "model": "mistral-small",
-                        "messages": [{"role": "user", "content": prompt}],
-                        "max_tokens": 300,
-                        "temperature": 0.3
-                    }
-                )
-                
-                if response.status_code == 200:
-                    content = response.json()["choices"][0]["message"]["content"]
-                    
-                    # Extract JSON from response
-                    start_idx = content.find('{')
-                    end_idx = content.rfind('}') + 1
-                    
-                    if start_idx != -1 and end_idx != -1:
-                        json_str = content[start_idx:end_idx]
-                        eval_data = json.loads(json_str)
-                        
-                        return {
-                            "score": eval_data.get("score", 0),
-                            "max_score": question.marks,
-                            "feedback": eval_data.get("feedback", "No feedback available"),
-                            "suggestions": eval_data.get("suggestions", ""),
-                            "correct": eval_data.get("score", 0) == question.marks
+                if model_choice == "Gemini":
+                    genai.configure(api_key=GEMINI_API_KEY)
+                    model = genai.GenerativeModel('gemini-2.5-flash')
+                    response = model.generate_content(prompt)
+                    content = response.text
+                else:
+                    response = requests.post(
+                        f"{MISTRAL_BASE_URL}/chat/completions",
+                        headers={"Authorization": f"Bearer {MISTRAL_API_KEY}"},
+                        json={
+                            "model": "mistral-small",
+                            "messages": [{"role": "user", "content": prompt}],
+                            "max_tokens": 300,
+                            "temperature": 0.3
                         }
-                        
+                    )
+                    if response.status_code == 200:
+                        content = response.json()["choices"][0]["message"]["content"]
+                    else:
+                        st.error(f"Mistral API error: {response.text}")
+                        return {
+                            "score": 0,
+                            "max_score": question.marks,
+                            "feedback": "API error.",
+                            "correct": False
+                        }
+                start_idx = content.find('{')
+                end_idx = content.rfind('}') + 1
+                if start_idx != -1 and end_idx != -1:
+                    json_str = content[start_idx:end_idx]
+                    eval_data = json.loads(json_str)
+                    return {
+                        "score": eval_data.get("score", 0),
+                        "max_score": question.marks,
+                        "feedback": eval_data.get("feedback", "No feedback available"),
+                        "suggestions": eval_data.get("suggestions", ""),
+                        "correct": eval_data.get("score", 0) == question.marks
+                    }
             except Exception as e:
                 st.error(f"Error evaluating answer: {str(e)}")
-            
-            # Fallback evaluation
             return {
-                "score": question.marks // 2,  # Give half marks as fallback
+                "score": question.marks // 2,
                 "max_score": question.marks,
                 "feedback": "Answer submitted successfully. Manual review may be needed.",
                 "correct": False
@@ -934,29 +942,23 @@ class PDFExporter:
 
 def main():
     """Main application function"""
-    
     st.title("📚 Book Question Generator & Assessment")
     st.markdown("Upload book chapters and generate AI-powered questions with evaluation")
-    
-    # Initialize session state
-    if 'questions' not in st.session_state:
-        st.session_state.questions = []
-    if 'test_active' not in st.session_state:
-        st.session_state.test_active = False
-    if 'current_question' not in st.session_state:
-        st.session_state.current_question = 0
-    if 'user_answers' not in st.session_state:
-        st.session_state.user_answers = {}
-    if 'test_results' not in st.session_state:
-        st.session_state.test_results = []
-    
-    # Sidebar navigation
+
+    # Model selection
+    if 'model_choice' not in st.session_state:
+        st.session_state.model_choice = "Mistral"
     st.sidebar.title("Navigation")
+    st.sidebar.markdown("---")
+    st.session_state.model_choice = st.sidebar.selectbox(
+        "Select AI Model",
+        ["Mistral", "Gemini"],
+        index=0 if st.session_state.model_choice == "Mistral" else 1
+    )
     page = st.sidebar.selectbox(
         "Select Page",
         ["📁 Upload & Generate", "⚙️ Configure Test", "✍️ Take Test", "📊 Results"]
     )
-    
     if page == "📁 Upload & Generate":
         upload_and_generate_page()
     elif page == "⚙️ Configure Test":
@@ -1050,23 +1052,16 @@ def upload_and_generate_page():
         if st.button("🎯 Generate Questions from Sample", type="primary"):
             if question_types:
                 all_questions = []
-                
                 progress_bar = st.progress(0)
                 total_types = len(question_types)
-                
                 for i, q_type in enumerate(question_types):
                     with st.spinner(f"Generating {q_type} questions..."):
-                        questions = MistralAPI.generate_questions(sample_text, q_type, num_questions)
+                        questions = AIModelAPI.generate_questions(sample_text, q_type, num_questions, st.session_state.model_choice)
                         all_questions.extend(questions)
-                    
                     progress_bar.progress((i + 1) / total_types)
-                
                 st.session_state.questions = all_questions
-                
                 if all_questions:
                     st.success(f"✅ Generated {len(all_questions)} questions!")
-                    
-                    # Display summary
                     st.subheader("Generated Questions Summary")
                     for q_type in question_types:
                         type_questions = [q for q in all_questions if q.type == q_type]
@@ -1149,29 +1144,20 @@ def upload_and_generate_page():
             if st.button("🎯 Generate Questions", type="primary"):
                 if question_types:
                     all_questions = []
-                    
                     progress_bar = st.progress(0)
                     total_types = len(question_types)
-                    
                     for i, q_type in enumerate(question_types):
                         with st.spinner(f"Generating {q_type} questions..."):
-                            questions = MistralAPI.generate_questions(text, q_type, num_questions)
+                            questions = AIModelAPI.generate_questions(text, q_type, num_questions, st.session_state.model_choice)
                             all_questions.extend(questions)
-                        
                         progress_bar.progress((i + 1) / total_types)
-                    
                     st.session_state.questions = all_questions
-                    
                     if all_questions:
                         st.success(f"✅ Generated {len(all_questions)} questions!")
-                        
-                        # Display summary
                         st.subheader("Generated Questions Summary")
                         for q_type in question_types:
                             type_questions = [q for q in all_questions if q.type == q_type]
                             st.write(f"**{q_type.replace('_', ' ').title()}**: {len(type_questions)} questions")
-                        
-                        # Export options
                         if PDF_EXPORT_AVAILABLE:
                             pdf_data = PDFExporter.create_questions_pdf(all_questions, f"Questions from {uploaded_file.name}")
                             if pdf_data:
@@ -1382,9 +1368,8 @@ def finish_test():
     with st.spinner("Evaluating answers..."):
         for i, question in enumerate(questions):
             user_answer = answers.get(i, "")
-            
             if user_answer:
-                evaluation = MistralAPI.evaluate_answer(question, user_answer)
+                evaluation = AIModelAPI.evaluate_answer(question, user_answer, st.session_state.model_choice)
                 total_score += evaluation['score']
             else:
                 evaluation = {
@@ -1393,7 +1378,6 @@ def finish_test():
                     'feedback': 'No answer provided',
                     'correct': False
                 }
-            
             max_score += question.marks
             results.append({
                 'question': question,
