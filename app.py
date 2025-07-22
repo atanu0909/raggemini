@@ -73,9 +73,9 @@ st.set_page_config(
 # Constants
 
 # Model API Keys
-MISTRAL_API_KEY = st.secrets.get("MISTRAL_API_KEY", os.getenv("MISTRAL_API_KEY", "ELvBe6YSxK0LgKpwnz2qG4nDE0tVhO6r"))
+MISTRAL_API_KEY = st.secrets.get("MISTRAL_API_KEY") or os.getenv("MISTRAL_API_KEY")
 MISTRAL_BASE_URL = "https://api.mistral.ai/v1"
-GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY", os.getenv("GEMINI_API_KEY", "AIzaSyC87pphG3Esb3UnRiMQiAscJ931IKk3RkM"))
+GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY") or os.getenv("GEMINI_API_KEY")
 
 @dataclass
 class Question:
