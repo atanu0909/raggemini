@@ -1027,12 +1027,11 @@ def upload_and_generate_page():
     subject_options = [
         "English", "Chemistry", "Physics", "Geography", "Economics", "Maths", "Computer", "Story/Fables", "Newspaper", "General Knowledge", "History"
     ]
-    selected_subject = st.selectbox(
+    st.selectbox(
         "Which subject are you uploading?",
         subject_options,
         key="selected_subject"
     )
-    st.session_state.selected_subject = selected_subject
 
     uploaded_file = st.file_uploader(
         "Choose a file",
