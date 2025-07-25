@@ -1309,7 +1309,7 @@ def take_test_page():
     
     # Answer input
     user_answer = st.session_state.user_answers.get(current_idx, "")
-    
+
     if question.type == "mcq":
         if question.options:
             answer = st.radio(
@@ -1321,14 +1321,51 @@ def take_test_page():
             if answer:
                 st.session_state.user_answers[current_idx] = answer
     else:
-        answer = st.text_area(
-            "Your answer:",
-            value=user_answer,
-            key=f"text_{current_idx}",
-            height=150
-        )
-        if answer:
-            st.session_state.user_answers[current_idx] = answer
+        st.markdown("**Choose your answer input method:**")
+        input_tabs = st.tabs(["Text", "Audio", "Handwriting Image"])
+
+        # Text input
+        with input_tabs[0]:
+            answer = st.text_area(
+                "Your answer:",
+                value=user_answer,
+                key=f"text_{current_idx}",
+                height=150
+            )
+            if answer:
+                st.session_state.user_answers[current_idx] = answer
+
+        # Audio input (already handled above)
+        with input_tabs[1]:
+            st.info("Use the audio interface above to record or upload your answer.")
+
+        # Handwriting image input
+        with input_tabs[2]:
+            st.markdown("**Upload an image of your handwritten answer:**")
+            uploaded_img = st.file_uploader(
+                "Choose an image file (JPG, PNG)",
+                type=["jpg", "jpeg", "png"],
+                key=f"handwriting_img_{current_idx}"
+            )
+            if uploaded_img:
+                from PIL import Image
+                import google.generativeai as genai
+                try:
+                    genai.configure(api_key=GEMINI_API_KEY)
+                    model = genai.GenerativeModel('gemini-2.5-flash')
+                    image = Image.open(uploaded_img)
+                    input_prompt = "Rewrite the handwritten answer in the image as text."
+                    with st.spinner("Transcribing handwriting with Gemini..."):
+                        response = model.generate_content([input_prompt, image])
+                        handwriting_text = response.text
+                    if handwriting_text:
+                        st.success("✅ Handwriting transcribed!")
+                        st.text_area("Transcribed Text:", handwriting_text, key=f"handwriting_text_{current_idx}")
+                        st.session_state.user_answers[current_idx] = handwriting_text
+                    else:
+                        st.error("❌ Could not transcribe handwriting. Try a clearer image.")
+                except Exception as e:
+                    st.error(f"Error processing handwriting image: {str(e)}")
     
     # Hint
     if config['show_hints'] and question.hint:
