@@ -412,7 +412,8 @@ class AIModelAPI:
 
     @staticmethod
     def evaluate_answer(question: Question, user_answer: str, model_choice: str = "Mistral") -> Dict:
-        """Evaluate user's answer using selected AI model"""
+        """Evaluate user's answer using selected AI model and subject context"""
+        subject = st.session_state.get("selected_subject", "General Knowledge")
         if question.type == "mcq":
             correct = user_answer == question.correct_answer
             score = question.marks if correct else 0
@@ -424,12 +425,26 @@ class AIModelAPI:
                 "correct": correct
             }
         else:
+            # Subject-specific evaluation prompt
+            subject_focus = {
+                "Maths": "Focus on formulas, calculation steps, and final answer accuracy.",
+                "Chemistry": "Focus on chemical formulas, reaction steps, and correct terminology.",
+                "Physics": "Focus on concepts, formulas, and logical steps.",
+                "History": "Focus on names, locations, dates, and historical accuracy.",
+                "English": "Focus on grammar, vocabulary, and answer relevance.",
+                "Geography": "Focus on locations, facts, and map-related details.",
+                "Economics": "Focus on concepts, definitions, and economic reasoning.",
+                "Computer": "Focus on technical accuracy, code, and logic.",
+                "Story/Fables": "Focus on narrative, characters, and moral lessons.",
+                "Newspaper": "Focus on facts, reporting style, and clarity.",
+                "General Knowledge": "Focus on factual correctness and clarity."
+            }
+            focus_text = subject_focus.get(subject, subject_focus["General Knowledge"])
             prompt = f"""
-            Evaluate this answer for the given question. Give a score out of {question.marks} marks.
-            
+            Evaluate this answer for the given question. Subject: {subject}. {focus_text}
+            Give a score out of {question.marks} marks.
             Question: {question.text}
             Answer: {user_answer}
-            
             Provide evaluation in JSON format:
             {{
                 "score": <number>,
@@ -1008,6 +1023,17 @@ def upload_and_generate_page():
                 st.warning("⚠️ Not available")
     
     # File upload
+    st.subheader("Select Subject")
+    subject_options = [
+        "English", "Chemistry", "Physics", "Geography", "Economics", "Maths", "Computer", "Story/Fables", "Newspaper", "General Knowledge", "History"
+    ]
+    selected_subject = st.selectbox(
+        "Which subject are you uploading?",
+        subject_options,
+        key="selected_subject"
+    )
+    st.session_state.selected_subject = selected_subject
+
     uploaded_file = st.file_uploader(
         "Choose a file",
         type=['pdf', 'docx', 'txt'],
