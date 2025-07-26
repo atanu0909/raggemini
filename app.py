@@ -992,27 +992,26 @@ def main():
     # Dark/Light mode toggle
     if 'dark_mode' not in st.session_state:
         st.session_state.dark_mode = False
-    dark_mode = st.sidebar.toggle("🌗 Dark Mode", value=st.session_state.dark_mode, key="dark_mode_toggle")
+    dark_mode = st.sidebar.checkbox("🌗 Dark Mode", value=st.session_state.dark_mode, key="dark_mode_toggle")
     st.session_state.dark_mode = dark_mode
     st.markdown(f'<div class="atanu-header {"atanu-dark" if dark_mode else ""}">Book Question Generator & Assessment<br><span style="font-size:1.2rem;font-weight:normal;">by ATANU GHOSH</span></div>', unsafe_allow_html=True)
     st.markdown(f'<div class="atanu-sub {"atanu-dark" if dark_mode else ""}">Welcome! This platform is designed for students and educators to generate, take, and evaluate book-based questions with AI.</div>', unsafe_allow_html=True)
 
-    # Guidelines section
-    with st.expander("📋 Guidelines & Features", expanded=True):
-        st.markdown("""
-        <div class="atanu-guidelines {mode}">
-        <ul>
-        <li>Upload chapters in PDF, DOCX, or TXT format.</li>
-        <li>Select your subject for tailored evaluation (Maths, Chemistry, English, etc.).</li>
-        <li>Generate MCQ and subjective questions (1, 2, 3, 5 marks).</li>
-        <li>Answer via text, audio, or handwriting image (Gemini-powered OCR).</li>
-        <li>Take tests and get instant AI feedback and scoring.</li>
-        <li>Track your test history and performance.</li>
-        <li>All data is securely handled. API keys are never exposed.</li>
-        <li>Switch between Dark/Light mode for comfort.</li>
-        </ul>
-        </div>
-        """.replace("{mode}", "atanu-dark" if dark_mode else ""), unsafe_allow_html=True)
+    # Guidelines section (always visible, not in expander)
+    st.markdown(f"""
+    <div class="atanu-guidelines {'atanu-dark' if dark_mode else ''}">
+    <ul>
+    <li>Upload chapters in PDF, DOCX, or TXT format.</li>
+    <li>Select your subject for tailored evaluation (Maths, Chemistry, English, etc.).</li>
+    <li>Generate MCQ and subjective questions (1, 2, 3, 5 marks).</li>
+    <li>Answer via text, audio, or handwriting image (Gemini-powered OCR).</li>
+    <li>Take tests and get instant AI feedback and scoring.</li>
+    <li>Track your test history and performance.</li>
+    <li>All data is securely handled. API keys are never exposed.</li>
+    <li>Switch between Dark/Light mode for comfort.</li>
+    </ul>
+    </div>
+    """, unsafe_allow_html=True)
 
     # Sidebar navigation
     st.sidebar.title("Navigation")
