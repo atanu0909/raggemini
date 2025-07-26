@@ -957,12 +957,64 @@ class PDFExporter:
 
 def main():
     """Main application function"""
-    st.title("📚 Book Question Generator & Assessment")
-    st.markdown("Upload book chapters and generate AI-powered questions with evaluation")
+    # --- Custom UI ---
+    st.markdown("""
+        <style>
+        .atanu-header {
+            background: linear-gradient(90deg, #4e54c8 0%, #8f94fb 100%);
+            color: white;
+            padding: 24px 0 12px 0;
+            border-radius: 0 0 16px 16px;
+            text-align: center;
+            font-size: 2.2rem;
+            font-weight: bold;
+            letter-spacing: 2px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        }
+        .atanu-sub {
+            color: #222;
+            font-size: 1.1rem;
+            text-align: center;
+            margin-bottom: 0.5rem;
+        }
+        .atanu-guidelines {
+            background: #f7f7fa;
+            border-radius: 12px;
+            padding: 18px;
+            margin-bottom: 1.5rem;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+        }
+        .atanu-dark .atanu-header { background: linear-gradient(90deg, #232526 0%, #414345 100%); color: #fff; }
+        .atanu-dark .atanu-guidelines { background: #232526; color: #eee; }
+        </style>
+    """, unsafe_allow_html=True)
 
-    # Model selection
-    if 'model_choice' not in st.session_state:
-        st.session_state.model_choice = "Mistral"
+    # Dark/Light mode toggle
+    if 'dark_mode' not in st.session_state:
+        st.session_state.dark_mode = False
+    dark_mode = st.sidebar.toggle("🌗 Dark Mode", value=st.session_state.dark_mode, key="dark_mode_toggle")
+    st.session_state.dark_mode = dark_mode
+    st.markdown(f'<div class="atanu-header {"atanu-dark" if dark_mode else ""}">Book Question Generator & Assessment<br><span style="font-size:1.2rem;font-weight:normal;">by ATANU GHOSH</span></div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="atanu-sub {"atanu-dark" if dark_mode else ""}">Welcome! This platform is designed for students and educators to generate, take, and evaluate book-based questions with AI.</div>', unsafe_allow_html=True)
+
+    # Guidelines section
+    with st.expander("📋 Guidelines & Features", expanded=True):
+        st.markdown("""
+        <div class="atanu-guidelines {mode}">
+        <ul>
+        <li>Upload chapters in PDF, DOCX, or TXT format.</li>
+        <li>Select your subject for tailored evaluation (Maths, Chemistry, English, etc.).</li>
+        <li>Generate MCQ and subjective questions (1, 2, 3, 5 marks).</li>
+        <li>Answer via text, audio, or handwriting image (Gemini-powered OCR).</li>
+        <li>Take tests and get instant AI feedback and scoring.</li>
+        <li>Track your test history and performance.</li>
+        <li>All data is securely handled. API keys are never exposed.</li>
+        <li>Switch between Dark/Light mode for comfort.</li>
+        </ul>
+        </div>
+        """.replace("{mode}", "atanu-dark" if dark_mode else ""), unsafe_allow_html=True)
+
+    # Sidebar navigation
     st.sidebar.title("Navigation")
     st.sidebar.markdown("---")
     st.session_state.model_choice = st.sidebar.selectbox(
@@ -974,6 +1026,8 @@ def main():
         "Select Page",
         ["📁 Upload & Generate", "⚙️ Configure Test", "✍️ Take Test", "📊 Results"]
     )
+
+    # Page routing
     if page == "📁 Upload & Generate":
         upload_and_generate_page()
     elif page == "⚙️ Configure Test":
