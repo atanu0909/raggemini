@@ -1017,6 +1017,8 @@ def main():
     # Sidebar navigation
     st.sidebar.title("Navigation")
     st.sidebar.markdown("---")
+    if 'model_choice' not in st.session_state:
+        st.session_state.model_choice = "Mistral"
     st.session_state.model_choice = st.sidebar.selectbox(
         "Select AI Model",
         ["Mistral", "Gemini"],
