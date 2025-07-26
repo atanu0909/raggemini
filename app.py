@@ -999,9 +999,10 @@ def main():
 
     # Guidelines section (always visible, not in expander)
     guidelines_class = "atanu-guidelines atanu-dark" if dark_mode else "atanu-guidelines"
+    guidelines_text_color = "#eee" if dark_mode else "#222"
     st.markdown(f"""
-    <div class="{guidelines_class}">
-    <ul>
+    <div class='{guidelines_class}'>
+    <ul style='color: {guidelines_text_color}; font-size: 1.08rem; font-weight: 500;'>
     <li>Upload chapters in PDF, DOCX, or TXT format.</li>
     <li>Select your subject for tailored evaluation (Maths, Chemistry, English, etc.).</li>
     <li>Generate MCQ and subjective questions (1, 2, 3, 5 marks).</li>
