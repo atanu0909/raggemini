@@ -998,8 +998,9 @@ def main():
     st.markdown(f'<div class="atanu-sub {"atanu-dark" if dark_mode else ""}">Welcome! This platform is designed for students and educators to generate, take, and evaluate book-based questions with AI.</div>', unsafe_allow_html=True)
 
     # Guidelines section (always visible, not in expander)
+    guidelines_class = "atanu-guidelines atanu-dark" if dark_mode else "atanu-guidelines"
     st.markdown(f"""
-    <div class="atanu-guidelines {'atanu-dark' if dark_mode else ''}">
+    <div class="{guidelines_class}">
     <ul>
     <li>Upload chapters in PDF, DOCX, or TXT format.</li>
     <li>Select your subject for tailored evaluation (Maths, Chemistry, English, etc.).</li>
