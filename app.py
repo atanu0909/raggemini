@@ -122,10 +122,7 @@ class DocumentProcessor:
 
         # Fallback to PyPDF2/pypdf if PyMuPDF fails or no text
         if not text.strip():
-            # ...existing code for PyPDF2 and pypdf extraction...
-            # (Paste the previous PyPDF2/pypdf extraction logic here)
-            # For brevity, this is represented as ...existing code...
-            # ...existing code...
+            pass
 
         # Clean up extracted text
         if text.strip():
