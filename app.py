@@ -949,9 +949,37 @@ def main():
 def upload_and_generate_page():
     """Upload and question generation page"""
     st.header("📁 Upload & Generate Questions")
+    # --- User Identification for History ---
+    st.markdown("""
+    <div style='background:#f7f7fa; border-radius:10px; padding:18px; margin-bottom:1.2rem; box-shadow:0 1px 4px rgba(0,0,0,0.04);'>
+        <span style='font-size:1.15rem; color:#4e54c8; font-weight:600;'>Step 0: Enter Your Name (for history)</span>
+    </div>
+    """, unsafe_allow_html=True)
+    username = st.text_input("Enter your name or ID (for saving and loading history)", value=st.session_state.get("username", ""), key="username")
+    if username:
+        st.session_state["username"] = username
+    else:
+        st.info("Please enter your name to enable history features.")
+
+    # --- Load Previous History ---
+    import os, json
+    history_dir = os.path.join("data")
+    history_file = os.path.join(history_dir, f"questions_{username}.json") if username else None
+    if username and os.path.exists(history_file):
+        with st.expander(f"� Load Previous Questions for {username}", expanded=False):
+            with open(history_file, "r", encoding="utf-8") as f:
+                user_history = json.load(f)
+            if user_history:
+                st.success(f"Found {len(user_history)} previous questions.")
+                for i, q in enumerate(user_history, 1):
+                    st.markdown(f"**Q{i}:** {q.get('text','')} <br> <span style='color:#888;'>Type: {q.get('type','')}, Marks: {q.get('marks','')}</span>", unsafe_allow_html=True)
+            else:
+                st.info("No previous questions found.")
+    elif username:
+        st.info("No previous history found for this user.")
     
     # Show system status
-    with st.expander("🔧 System Status"):
+    with st.expander("�🔧 System Status"):
         col1, col2, col3 = st.columns(3)
         with col1:
             st.write("**PDF Processing:**")
@@ -1129,6 +1157,14 @@ def upload_and_generate_page():
                             all_questions.extend(questions)
                         progress_bar.progress((i + 1) / total_types)
                     st.session_state.questions = all_questions
+                    # --- Save to User History JSON ---
+                    if username:
+                        os.makedirs(history_dir, exist_ok=True)
+                        # Convert Question objects to dicts for JSON
+                        questions_dict = [q.__dict__ if hasattr(q, "__dict__") else dict(q) for q in all_questions]
+                        with open(history_file, "w", encoding="utf-8") as f:
+                            json.dump(questions_dict, f, ensure_ascii=False, indent=2)
+                        st.success(f"✅ Saved {len(all_questions)} questions to history for {username}!")
                     if all_questions:
                         st.success(f"✅ Generated {len(all_questions)} questions!")
                         st.subheader("Generated Questions Summary")
