@@ -10,7 +10,6 @@ import streamlit as st
 import google.generativeai as genai
 import PyPDF2
 import pypdf
-import pyPdf as pypdf  # For older pypdf versions
 from docx import Document
 from gtts import gTTS
 import speech_recognition as sr
@@ -40,14 +39,6 @@ try:
     PYPDF_AVAILABLE = True
 except ImportError:
     PYPDF_AVAILABLE = False
-
-# For older pypdf versions, try alternative import
-if not PYPDF_AVAILABLE:
-    try:
-        import pyPdf as pypdf
-        PYPDF_AVAILABLE = True
-    except ImportError:
-        PYPDF_AVAILABLE = False
 
 PDF_AVAILABLE = PYPDF2_AVAILABLE or PYPDF_AVAILABLE
 
