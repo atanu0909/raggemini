@@ -955,10 +955,15 @@ def upload_and_generate_page():
         <span style='font-size:1.15rem; color:#4e54c8; font-weight:600;'>Step 0: Enter Your Name (for history)</span>
     </div>
     """, unsafe_allow_html=True)
-    username = st.text_input("Enter your name or ID (for saving and loading history)", value=st.session_state.get("username", ""), key="username")
-    if username:
-        st.session_state["username"] = username
-    else:
+    def set_username():
+        st.session_state["username"] = st.session_state.get("username", "")
+    username = st.text_input(
+        "Enter your name or ID (for saving and loading history)",
+        value=st.session_state.get("username", ""),
+        key="username",
+        on_change=set_username
+    )
+    if not username:
         st.info("Please enter your name to enable history features.")
 
     # --- Load Previous History ---
