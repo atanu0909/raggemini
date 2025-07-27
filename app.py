@@ -949,39 +949,58 @@ def main():
 def upload_and_generate_page():
     """Upload and question generation page"""
     st.header("📁 Upload & Generate Questions")
-    # --- User Identification for History ---
-    st.markdown("""
-    <div style='background:#f7f7fa; border-radius:10px; padding:18px; margin-bottom:1.2rem; box-shadow:0 1px 4px rgba(0,0,0,0.04);'>
-        <span style='font-size:1.15rem; color:#4e54c8; font-weight:600;'>Step 0: Enter Your Name (for history)</span>
-    </div>
-    """, unsafe_allow_html=True)
-    def set_username():
-        st.session_state["username"] = st.session_state.get("username", "")
-    username = st.text_input(
-        "Enter your name or ID (for saving and loading history)",
-        value=st.session_state.get("username", ""),
-        key="username",
-        on_change=set_username
-    )
-    if not username:
-        st.info("Please enter your name to enable history features.")
+    # --- User Registration/Login Tab for History ---
+    tabs = st.tabs(["User Login/Registration", "Upload & Generate"])
+    with tabs[0]:
+        st.markdown("""
+        <div style='background:#f7f7fa; border-radius:10px; padding:18px; margin-bottom:1.2rem; box-shadow:0 1px 4px rgba(0,0,0,0.04);'>
+            <span style='font-size:1.15rem; color:#4e54c8; font-weight:600;'>User Login / Registration (for history)</span>
+        </div>
+        """, unsafe_allow_html=True)
+        user_id = st.text_input("User ID", value=st.session_state.get("user_id", ""), key="user_id")
+        mobile_no = st.text_input("Mobile Number", value=st.session_state.get("mobile_no", ""), key="mobile_no")
+        password = st.text_input("Password", value=st.session_state.get("password", ""), key="password", type="password")
+        user_file = os.path.join("data", "users.json")
+        if st.button("Register / Login", key="register_login_btn"):
+            if user_id and mobile_no and password:
+                # Load or create user database
+                users = {}
+                if os.path.exists(user_file):
+                    with open(user_file, "r", encoding="utf-8") as f:
+                        users = json.load(f)
+                # Register or update user
+                users[user_id] = {"mobile_no": mobile_no, "password": password}
+                with open(user_file, "w", encoding="utf-8") as f:
+                    json.dump(users, f, ensure_ascii=False, indent=2)
+                st.session_state["user_id"] = user_id
+                st.session_state["mobile_no"] = mobile_no
+                st.session_state["password"] = password
+                st.success(f"Welcome, {user_id}! You are now registered/logged in.")
+            else:
+                st.error("Please fill all fields to register/login.")
+        # Show previous history for logged-in user
+        if st.session_state.get("user_id"):
+            history_file = os.path.join("data", f"questions_{st.session_state['user_id']}.json")
+            if os.path.exists(history_file):
+                with st.expander(f"📜 Load Previous Questions for {st.session_state['user_id']}", expanded=False):
+                    with open(history_file, "r", encoding="utf-8") as f:
+                        user_history = json.load(f)
+                    if user_history:
+                        st.success(f"Found {len(user_history)} previous questions.")
+                        for i, q in enumerate(user_history, 1):
+                            st.markdown(f"**Q{i}:** {q.get('text','')} <br> <span style='color:#888;'>Type: {q.get('type','')}, Marks: {q.get('marks','')}</span>", unsafe_allow_html=True)
+                    else:
+                        st.info("No previous questions found.")
+            else:
+                st.info("No previous history found for this user.")
+    with tabs[1]:
+        # Use logged-in user_id for history
+        user_id = st.session_state.get("user_id", "")
+        # ...existing code...
 
     # --- Load Previous History ---
     import os, json
-    history_dir = os.path.join("data")
-    history_file = os.path.join(history_dir, f"questions_{username}.json") if username else None
-    if username and os.path.exists(history_file):
-        with st.expander(f"� Load Previous Questions for {username}", expanded=False):
-            with open(history_file, "r", encoding="utf-8") as f:
-                user_history = json.load(f)
-            if user_history:
-                st.success(f"Found {len(user_history)} previous questions.")
-                for i, q in enumerate(user_history, 1):
-                    st.markdown(f"**Q{i}:** {q.get('text','')} <br> <span style='color:#888;'>Type: {q.get('type','')}, Marks: {q.get('marks','')}</span>", unsafe_allow_html=True)
-            else:
-                st.info("No previous questions found.")
-    elif username:
-        st.info("No previous history found for this user.")
+    # (Old username-based history logic removed; now handled by user_id tab above)
     
     # Show system status
     with st.expander("�🔧 System Status"):
@@ -1163,13 +1182,7 @@ def upload_and_generate_page():
                         progress_bar.progress((i + 1) / total_types)
                     st.session_state.questions = all_questions
                     # --- Save to User History JSON ---
-                    if username:
-                        os.makedirs(history_dir, exist_ok=True)
-                        # Convert Question objects to dicts for JSON
-                        questions_dict = [q.__dict__ if hasattr(q, "__dict__") else dict(q) for q in all_questions]
-                        with open(history_file, "w", encoding="utf-8") as f:
-                            json.dump(questions_dict, f, ensure_ascii=False, indent=2)
-                        st.success(f"✅ Saved {len(all_questions)} questions to history for {username}!")
+                    # (Old username-based history saving removed; now handled by user_id above)
                     if all_questions:
                         st.success(f"✅ Generated {len(all_questions)} questions!")
                         st.subheader("Generated Questions Summary")
