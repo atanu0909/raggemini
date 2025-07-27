@@ -90,12 +90,7 @@ class Question:
 class DocumentProcessor:
     """Handles document processing for various file types"""
     
-    # Try importing pymupdf (fitz)
-    try:
-        import fitz
-        PYMUPDF_AVAILABLE = True
-    except ImportError:
-        PYMUPDF_AVAILABLE = False
+    # PyMuPDF availability handled at top
 
     @staticmethod
     def extract_text_from_pdf(file_content: bytes) -> str:
