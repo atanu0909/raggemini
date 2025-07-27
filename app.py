@@ -137,19 +137,19 @@ class DocumentProcessor:
             st.info(f"  • Characters extracted: {len(text)}")
             st.info(f"  • Words extracted: {len(text.split())}")
             return text
-
-        st.error("❌ Could not extract text from PDF")
-        st.error("🔍 Possible reasons:")
-        st.error("  • PDF contains only images/scanned content (needs OCR)")
-        st.error("  • PDF is password protected or encrypted")
-        st.error("  • PDF file is corrupted or has invalid format")
-        st.error("  • Text is embedded as images rather than searchable text")
-        st.error("💡 Suggestions:")
-        st.error("  • Try converting the PDF to text format first")
-        st.error("  • Use an OCR tool for scanned documents")
-        st.error("  • Check if the PDF opens correctly in other applications")
-        st.error("  • Try uploading a different PDF file")
-        return ""
+        else:
+            st.error("❌ Could not extract text from PDF")
+            st.error("🔍 Possible reasons:")
+            st.error("  • PDF contains only images/scanned content (needs OCR)")
+            st.error("  • PDF is password protected or encrypted")
+            st.error("  • PDF file is corrupted or has invalid format")
+            st.error("  • Text is embedded as images rather than searchable text")
+            st.error("💡 Suggestions:")
+            st.error("  • Try converting the PDF to text format first")
+            st.error("  • Use an OCR tool for scanned documents")
+            st.error("  • Check if the PDF opens correctly in other applications")
+            st.error("  • Try uploading a different PDF file")
+            return ""
 
     @staticmethod
     def extract_images_from_pdf(file_content: bytes) -> list:
