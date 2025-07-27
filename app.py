@@ -1290,21 +1290,23 @@ def configure_test_page():
     # --- Custom Evaluation Rule Section ---
     st.markdown("---")
     st.subheader("Custom Evaluation Rule (Optional)")
-    custom_rule = st.text_area("Write your custom evaluation rule here (overrides subject rule)", value="", key="custom_eval_rule")
+    custom_rule = st.text_area("Write your custom evaluation rule here (overrides subject rule)", value=st.session_state.get("custom_eval_rule", ""), key="custom_eval_rule")
     uploaded_rule_pdf = st.file_uploader("Or upload a PDF with your custom evaluation rule", type=["pdf"], key="custom_eval_rule_pdf")
+    rule_text = ""
     if uploaded_rule_pdf:
         # Extract text from PDF
         rule_text = DocumentProcessor.extract_text_from_pdf(uploaded_rule_pdf.read())
         if rule_text:
             st.success("✅ Custom rule loaded from PDF!")
             st.text_area("Extracted Rule from PDF", rule_text, height=120, key="custom_eval_rule_pdf_preview")
-            st.session_state.custom_eval_rule = rule_text
+            st.session_state["custom_eval_rule"] = rule_text
         else:
             st.error("❌ Could not extract text from PDF.")
     elif custom_rule.strip():
-        st.session_state.custom_eval_rule = custom_rule.strip()
+        st.session_state["custom_eval_rule"] = custom_rule.strip()
     else:
-        st.session_state.custom_eval_rule = ""
+        if "custom_eval_rule" not in st.session_state:
+            st.session_state["custom_eval_rule"] = ""
     
     # Question selection
     st.subheader("Select Questions")
