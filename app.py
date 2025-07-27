@@ -822,13 +822,16 @@ class AudioProcessor:
             
             if uploaded_audio:
                 st.audio(uploaded_audio, format=f"audio/{uploaded_audio.name.split('.')[-1]}")
-                
                 if st.button("🔤 Process Audio File", key=f"process_audio_{current_idx}"):
                     with st.spinner("Processing uploaded audio..."):
                         file_answer = AudioProcessor.process_audio_file(uploaded_audio)
-                    
                     if file_answer:
                         st.success(f"✅ Audio file processed successfully!")
+                        st.text_area("Transcribed Text:", file_answer, key=f"transcribed_{current_idx}")
+                        user_answer = file_answer
+                    # If file_answer is empty, show error
+                    if not file_answer:
+                        st.error("❌ Could not process the audio file. Please try a different file.")
                         st.text_area("Transcribed Text:", file_answer, key=f"transcribed_{current_idx}")
                         user_answer = file_answer
                     else:
@@ -1133,23 +1136,6 @@ def upload_and_generate_page():
                 pass
         else:
             st.error("❌ Could not extract text from file. Please check the file and try again.")
-                            type_questions = [q for q in all_questions if q.type == q_type]
-                            st.write(f"**{q_type.replace('_', ' ').title()}**: {len(type_questions)} questions")
-                        if PDF_EXPORT_AVAILABLE:
-                            pdf_data = PDFExporter.create_questions_pdf(all_questions, f"Questions from {uploaded_file.name}")
-                            if pdf_data:
-                                st.download_button(
-                                    "📄 Download PDF",
-                                    pdf_data,
-                                    f"questions_{uploaded_file.name}.pdf",
-                                    "application/pdf"
-                                )
-                    else:
-                        st.error("❌ Failed to generate questions. Please try again.")
-                else:
-                    st.warning("⚠️ Please select at least one question type.")
-        else:
-            st.error("❌ Failed to extract text from the uploaded file.")
             st.info("💡 Try the following:")
             st.info("• Make sure the file is not corrupted")
             st.info("• For PDFs, ensure they contain text (not just images)")
