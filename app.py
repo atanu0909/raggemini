@@ -950,7 +950,7 @@ def upload_and_generate_page():
     """Upload and question generation page"""
     st.header("📁 Upload & Generate Questions")
     # --- User Registration/Login Tab for History ---
-    user_file = os.path.join("data", "users.json")
+    user_file = os.path.join("data", "users.json")  # Always define at top
     tabs = st.tabs(["User Login/Registration", "Upload & Generate"])
     with tabs[0]:
         st.markdown("""
