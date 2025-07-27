@@ -1110,11 +1110,44 @@ def upload_and_generate_page():
             st.subheader("Question Generation Settings")
             col1, col2 = st.columns(2)
             with col1:
-                pass
+                question_types = st.multiselect(
+                    "Select Question Types",
+                    ["mcq", "1_mark", "2_mark", "3_mark", "5_mark"],
+                    default=["mcq", "2_mark"],
+                    key="file_question_types"
+                )
             with col2:
-                pass
+                num_questions = st.slider("Questions per type", 1, 10, 3, key="file_num_questions")
             if st.button("🎯 Generate Questions", type="primary"):
-                pass
+                if question_types:
+                    all_questions = []
+                    progress_bar = st.progress(0)
+                    total_types = len(question_types)
+                    for i, q_type in enumerate(question_types):
+                        with st.spinner(f"Generating {q_type} questions..."):
+                            questions = AIModelAPI.generate_questions(text, q_type, num_questions, st.session_state.model_choice)
+                            all_questions.extend(questions)
+                        progress_bar.progress((i + 1) / total_types)
+                    st.session_state.questions = all_questions
+                    if all_questions:
+                        st.success(f"✅ Generated {len(all_questions)} questions!")
+                        st.subheader("Generated Questions Summary")
+                        for q_type in question_types:
+                            type_questions = [q for q in all_questions if q.type == q_type]
+                            st.write(f"**{q_type.replace('_', ' ').title()}**: {len(type_questions)} questions")
+                        if PDF_EXPORT_AVAILABLE:
+                            pdf_data = PDFExporter.create_questions_pdf(all_questions, f"Questions from {uploaded_file.name}")
+                            if pdf_data:
+                                st.download_button(
+                                    label="📥 Download Questions as PDF",
+                                    data=pdf_data,
+                                    file_name=f"Questions_{uploaded_file.name}.pdf",
+                                    mime="application/pdf"
+                                )
+                    else:
+                        st.error("❌ Failed to generate questions. Please try again.")
+                else:
+                    st.warning("⚠️ Please select at least one question type.")
         else:
             st.error("❌ Could not extract text from file. Please check the file and try again.")
             st.info("💡 Try the following:")
