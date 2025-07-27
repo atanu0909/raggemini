@@ -414,6 +414,8 @@ class AIModelAPI:
     def evaluate_answer(question: Question, user_answer: str, model_choice: str = "Mistral") -> Dict:
         """Evaluate user's answer using selected AI model and subject context"""
         subject = st.session_state.get("selected_subject", "General Knowledge")
+        # Use custom evaluation rule if present
+        custom_rule = st.session_state.get("custom_eval_rule", "").strip()
         if question.type == "mcq":
             correct = user_answer == question.correct_answer
             score = question.marks if correct else 0
@@ -439,7 +441,10 @@ class AIModelAPI:
                 "Newspaper": "Focus on facts, reporting style, and clarity.",
                 "General Knowledge": "Focus on factual correctness and clarity."
             }
-            focus_text = subject_focus.get(subject, subject_focus["General Knowledge"])
+            if custom_rule:
+                focus_text = custom_rule
+            else:
+                focus_text = subject_focus.get(subject, subject_focus["General Knowledge"])
             prompt = f"""
             Evaluate this answer for the given question. Subject: {subject}. {focus_text}
             Give a score out of {question.marks} marks.
@@ -1281,6 +1286,25 @@ def configure_test_page():
     with col2:
         randomize = st.checkbox("Randomize Questions", True)
         show_hints = st.checkbox("Allow Hints", True)
+    
+    # --- Custom Evaluation Rule Section ---
+    st.markdown("---")
+    st.subheader("Custom Evaluation Rule (Optional)")
+    custom_rule = st.text_area("Write your custom evaluation rule here (overrides subject rule)", value="", key="custom_eval_rule")
+    uploaded_rule_pdf = st.file_uploader("Or upload a PDF with your custom evaluation rule", type=["pdf"], key="custom_eval_rule_pdf")
+    if uploaded_rule_pdf:
+        # Extract text from PDF
+        rule_text = DocumentProcessor.extract_text_from_pdf(uploaded_rule_pdf.read())
+        if rule_text:
+            st.success("✅ Custom rule loaded from PDF!")
+            st.text_area("Extracted Rule from PDF", rule_text, height=120, key="custom_eval_rule_pdf_preview")
+            st.session_state.custom_eval_rule = rule_text
+        else:
+            st.error("❌ Could not extract text from PDF.")
+    elif custom_rule.strip():
+        st.session_state.custom_eval_rule = custom_rule.strip()
+    else:
+        st.session_state.custom_eval_rule = ""
     
     # Question selection
     st.subheader("Select Questions")
