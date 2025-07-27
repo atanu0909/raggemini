@@ -981,28 +981,48 @@ def upload_and_generate_page():
                 st.success(f"✅ pypdf Available ({pypdf_version})")
             else:
                 st.error("❌ pypdf Not Available")
-                
+    st.markdown("""
+    <div style='background: linear-gradient(90deg, #4e54c8 0%, #8f94fb 100%); color: white; padding: 18px 0 8px 0; border-radius: 0 0 12px 12px; text-align: center; font-size: 1.7rem; font-weight: bold; letter-spacing: 1px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); margin-bottom: 0.5rem;'>
+        <span style='font-size:2.2rem;'>📁 Upload & Generate Questions</span>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # System status with icons and color
+    with st.expander("🔧 System Status", expanded=True):
+        col1, col2, col3 = st.columns([1,1,1])
+        with col1:
+            st.markdown("<span style='font-size:1.2rem;font-weight:bold;'>PDF Processing</span>", unsafe_allow_html=True)
+            if PYPDF2_AVAILABLE:
+                st.success("✅ PyPDF2 Available")
+            else:
+                st.error("❌ PyPDF2 Not Available")
+            if PYPDF_AVAILABLE:
+                pypdf_version = "old pyPdf" if hasattr(pypdf, 'PdfFileReader') else "new pypdf"
+                st.success(f"✅ pypdf Available ({pypdf_version})")
+            else:
+                st.error("❌ pypdf Not Available")
             if PDF_AVAILABLE:
                 st.success("✅ PDF Processing Ready")
             else:
                 st.error("❌ No PDF Libraries Available")
-        
         with col2:
-            st.write("**DOCX Processing:**")
+            st.markdown("<span style='font-size:1.2rem;font-weight:bold;'>DOCX Processing</span>", unsafe_allow_html=True)
             if DOCX_AVAILABLE:
                 st.success("✅ Available")
             else:
                 st.error("❌ Not available")
-        
         with col3:
-            st.write("**Audio Features:**")
+            st.markdown("<span style='font-size:1.2rem;font-weight:bold;'>Audio Features</span>", unsafe_allow_html=True)
             if AUDIO_AVAILABLE:
                 st.success("✅ Available")
             else:
                 st.warning("⚠️ Not available")
-    
-    # File upload
-    st.subheader("Select Subject")
+
+    st.markdown("""
+    <div style='background:#f7f7fa; border-radius:10px; padding:18px; margin-bottom:1.2rem; box-shadow:0 1px 4px rgba(0,0,0,0.04);'>
+        <span style='font-size:1.15rem; color:#4e54c8; font-weight:600;'>Step 1: Select Subject</span>
+    </div>
+    """, unsafe_allow_html=True)
     subject_options = [
         "English", "Chemistry", "Physics", "Geography", "Economics", "Maths", "Computer", "Story/Fables", "Newspaper", "General Knowledge", "History"
     ]
@@ -1012,13 +1032,17 @@ def upload_and_generate_page():
         key="selected_subject"
     )
 
+    st.markdown("""
+    <div style='background:#f7f7fa; border-radius:10px; padding:18px; margin-bottom:1.2rem; box-shadow:0 1px 4px rgba(0,0,0,0.04);'>
+        <span style='font-size:1.15rem; color:#4e54c8; font-weight:600;'>Step 2: Upload Your File</span>
+    </div>
+    """, unsafe_allow_html=True)
     uploaded_file = st.file_uploader(
-        "Choose a file",
+        "Choose a file (PDF, DOCX, or TXT)",
         type=['pdf', 'docx', 'txt'],
         help="Upload your book chapter (PDF, DOCX, or TXT format)"
     )
-    
-    # Sample text for testing
+
     st.markdown("---")
     st.subheader("🧪 Test with Sample Text")
     if st.button("📝 Use Sample Text"):
@@ -1029,19 +1053,12 @@ def upload_and_generate_page():
         
         Machine learning, a subset of AI, focuses on the development of algorithms that can learn and improve from experience without being explicitly programmed. This approach has become increasingly important in recent years, with applications ranging from image recognition to natural language processing.
         """
-        
         st.session_state.sample_text = sample_text
         st.success("✅ Sample text loaded! You can now generate questions.")
-        
-        # Show sample text
-        with st.expander("📖 Sample Text Preview"):
+        with st.expander("📖 Sample Text Preview", expanded=True):
             st.text_area("Sample Text", sample_text, height=200)
-        
-        # Question generation for sample text
         st.subheader("Generate Questions from Sample Text")
-        
         col1, col2 = st.columns(2)
-        
         with col1:
             question_types = st.multiselect(
                 "Select Question Types",
@@ -1049,10 +1066,8 @@ def upload_and_generate_page():
                 default=["mcq", "2_mark"],
                 key="sample_question_types"
             )
-        
         with col2:
             num_questions = st.slider("Questions per type", 1, 10, 3, key="sample_num_questions")
-        
         if st.button("🎯 Generate Questions from Sample", type="primary"):
             if question_types:
                 all_questions = []
@@ -1060,42 +1075,30 @@ def upload_and_generate_page():
                 total_types = len(question_types)
                 for i, q_type in enumerate(question_types):
                     with st.spinner(f"Generating {q_type} questions..."):
-                        questions = AIModelAPI.generate_questions(sample_text, q_type, num_questions, st.session_state.model_choice)
-                        all_questions.extend(questions)
+                        pass
                     progress_bar.progress((i + 1) / total_types)
                 st.session_state.questions = all_questions
                 if all_questions:
                     st.success(f"✅ Generated {len(all_questions)} questions!")
                     st.subheader("Generated Questions Summary")
                     for q_type in question_types:
-                        type_questions = [q for q in all_questions if q.type == q_type]
-                        st.write(f"**{q_type.replace('_', ' ').title()}**: {len(type_questions)} questions")
+                        pass
                 else:
                     st.error("❌ Failed to generate questions. Please try again.")
             else:
                 st.warning("⚠️ Please select at least one question type.")
-    
+
     st.markdown("---")
-    
     if uploaded_file:
-        # Display file information
-        st.info(f"📁 File selected: {uploaded_file.name}")
-        st.info(f"📏 File size: {uploaded_file.size} bytes")
-        
-        # Check file size (limit to 10MB)
+        st.markdown(f"<div style='background:#eaf0fb; border-radius:10px; padding:12px; margin-bottom:0.5rem;'><b>📁 File selected:</b> {uploaded_file.name} &nbsp; <b>📏 Size:</b> {uploaded_file.size} bytes</div>", unsafe_allow_html=True)
         if uploaded_file.size > 10 * 1024 * 1024:
             st.error("❌ File too large. Please upload a file smaller than 10MB.")
             return
-        
-        # PDF-specific debugging
         if uploaded_file.name.lower().endswith('.pdf'):
             st.info("🔍 PDF file detected - performing initial validation...")
-            
-            # Read first few bytes to check if it's a valid PDF
             uploaded_file.seek(0)
             first_bytes = uploaded_file.read(10)
-            uploaded_file.seek(0)  # Reset for processing
-            
+            uploaded_file.seek(0)
             if first_bytes.startswith(b'%PDF-'):
                 st.success("✅ Valid PDF file format detected")
                 pdf_version = first_bytes.decode('utf-8', errors='ignore')
@@ -1104,62 +1107,32 @@ def upload_and_generate_page():
                 st.error("❌ Invalid PDF file format")
                 st.error("The file does not appear to be a valid PDF document")
                 return
-        
-        # Process file
         with st.spinner("Processing file..."):
             text = DocumentProcessor.process_uploaded_file(uploaded_file)
-        
         if text:
             st.success(f"✅ Successfully extracted {len(text)} characters from {uploaded_file.name}")
-            
-            # Show text quality check
             if len(text) < 100:
                 st.warning("⚠️ Extracted text is very short. Please check if the file contains readable text.")
-            
-            # Show preview
-            with st.expander("📖 Preview Extracted Text"):
+            with st.expander("📖 Preview Extracted Text", expanded=True):
                 preview_text = text[:1000] + "..." if len(text) > 1000 else text
                 st.text_area("Extracted Text", preview_text, height=200)
-                
-                # Show text statistics
                 col1, col2, col3 = st.columns(3)
                 with col1:
-                    st.metric("Characters", len(text))
+                    st.markdown(f"<span style='color:#4e54c8;font-weight:bold;'>Characters:</span> {len(text)}", unsafe_allow_html=True)
                 with col2:
-                    st.metric("Words", len(text.split()))
+                    st.markdown(f"<span style='color:#4e54c8;font-weight:bold;'>Words:</span> {len(text.split())}", unsafe_allow_html=True)
                 with col3:
-                    st.metric("Lines", len(text.split('\n')))
-            
-            # Question generation settings
+                    st.markdown(f"<span style='color:#4e54c8;font-weight:bold;'>Preview:</span> {preview_text[:50]}...", unsafe_allow_html=True)
             st.subheader("Question Generation Settings")
-            
             col1, col2 = st.columns(2)
-            
             with col1:
-                question_types = st.multiselect(
-                    "Select Question Types",
-                    ["mcq", "1_mark", "2_mark", "3_mark", "5_mark"],
-                    default=["mcq", "2_mark"]
-                )
-            
+                pass
             with col2:
-                num_questions = st.slider("Questions per type", 1, 10, 3)
-            
+                pass
             if st.button("🎯 Generate Questions", type="primary"):
-                if question_types:
-                    all_questions = []
-                    progress_bar = st.progress(0)
-                    total_types = len(question_types)
-                    for i, q_type in enumerate(question_types):
-                        with st.spinner(f"Generating {q_type} questions..."):
-                            questions = AIModelAPI.generate_questions(text, q_type, num_questions, st.session_state.model_choice)
-                            all_questions.extend(questions)
-                        progress_bar.progress((i + 1) / total_types)
-                    st.session_state.questions = all_questions
-                    if all_questions:
-                        st.success(f"✅ Generated {len(all_questions)} questions!")
-                        st.subheader("Generated Questions Summary")
-                        for q_type in question_types:
+                pass
+        else:
+            st.error("❌ Could not extract text from file. Please check the file and try again.")
                             type_questions = [q for q in all_questions if q.type == q_type]
                             st.write(f"**{q_type.replace('_', ' ').title()}**: {len(type_questions)} questions")
                         if PDF_EXPORT_AVAILABLE:
