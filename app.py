@@ -1,13 +1,11 @@
+import os
 """
 Book-Based Question Generation & Assessment System
 A streamlined Streamlit app for generating and evaluating questions from book chapters.
 """
-import os  # Ensure os is imported before any usage
-import os  # Ensure os is imported for path operations
 
 import streamlit as st
 import google.generativeai as genai
-import os
 import json
 import time
 import requests
