@@ -1,4 +1,6 @@
 import os
+import json
+import time
 """
 Book-Based Question Generation & Assessment System
 A streamlined Streamlit app for generating and evaluating questions from book chapters.
@@ -6,14 +8,9 @@ A streamlined Streamlit app for generating and evaluating questions from book ch
 
 import streamlit as st
 import google.generativeai as genai
-import json
-import time
-import requests
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
-import io
 from dataclasses import dataclass
-import base64
 
 # External libraries for document processing and audio
 try:
