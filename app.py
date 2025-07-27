@@ -950,6 +950,7 @@ def upload_and_generate_page():
     """Upload and question generation page"""
     st.header("📁 Upload & Generate Questions")
     # --- User Registration/Login Tab for History ---
+    user_file = os.path.join("data", "users.json")
     tabs = st.tabs(["User Login/Registration", "Upload & Generate"])
     with tabs[0]:
         st.markdown("""
@@ -960,7 +961,6 @@ def upload_and_generate_page():
         user_id = st.text_input("User ID", value=st.session_state.get("user_id", ""), key="user_id")
         mobile_no = st.text_input("Mobile Number", value=st.session_state.get("mobile_no", ""), key="mobile_no")
         password = st.text_input("Password", value=st.session_state.get("password", ""), key="password", type="password")
-        user_file = os.path.join("data", "users.json")
         if st.button("Register / Login", key="register_login_btn"):
             if user_id and mobile_no and password:
                 # Load or create user database
