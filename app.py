@@ -117,60 +117,41 @@ class DocumentProcessor:
                 st.success(f"✅ PyMuPDF extraction successful! Extracted {len(text)} characters")
         except ImportError:
             st.warning("⚠️ PyMuPDF not available")
-        except Exception as e:
-            st.warning(f"❌ PyMuPDF failed: {str(e)}")
-
-        # Fallback to PyPDF2/pypdf if PyMuPDF fails or no text
-        if not text.strip():
-            pass
-
-        # Clean up extracted text
-        if text.strip():
-            text = ' '.join(text.split())
-            text = text.replace('\n\n', '\n').replace('\n', ' ').strip()
-            st.success(f"🎉 PDF processing complete!")
-            st.info(f"📊 Final statistics:")
-            st.info(f"  • Methods used: {', '.join(extraction_methods)}")
-            st.info(f"  • Characters extracted: {len(text)}")
-            st.info(f"  • Words extracted: {len(text.split())}")
-            return text
-        else:
-            st.error("❌ Could not extract text from PDF")
-            st.error("🔍 Possible reasons:")
-            st.error("  • PDF contains only images/scanned content (needs OCR)")
-            st.error("  • PDF is password protected or encrypted")
-            st.error("  • PDF file is corrupted or has invalid format")
-            st.error("  • Text is embedded as images rather than searchable text")
-            st.error("💡 Suggestions:")
-            st.error("  • Try converting the PDF to text format first")
-            st.error("  • Use an OCR tool for scanned documents")
-            st.error("  • Check if the PDF opens correctly in other applications")
-            st.error("  • Try uploading a different PDF file")
-            return ""
-
     @staticmethod
-    def extract_images_from_pdf(file_content: bytes) -> list:
-        """Extract images/diagrams from PDF using PyMuPDF (fitz)"""
-        images = []
+    def extract_text_from_pdf(file_content: bytes) -> str:
+        """Extract text from PDF using PyPDF2/pypdf only"""
+        text = ""
+        st.info("🔍 Starting PDF text extraction...")
         try:
-            import fitz
-            doc = fitz.open(stream=file_content, filetype="pdf")
-            for page_num in range(doc.page_count):
-                page = doc.load_page(page_num)
-                for img in page.get_images(full=True):
-                    xref = img[0]
-                    base_image = doc.extract_image(xref)
-                    image_bytes = base_image["image"]
-                    images.append(image_bytes)
-            return images
-        except ImportError:
-            st.warning("⚠️ PyMuPDF not available for image extraction")
+            import PyPDF2
+            reader = PyPDF2.PdfReader(io.BytesIO(file_content))
+            for page_num, page in enumerate(reader.pages):
+                page_text = page.extract_text()
+                if page_text and page_text.strip():
+                    text += page_text + "\n"
+            if text.strip():
+                text = ' '.join(text.split())
+                text = text.replace('\n\n', '\n').replace('\n', ' ').strip()
+                st.success(f"🎉 PDF processing complete!")
+                st.info(f"📊 Characters extracted: {len(text)}")
+                st.info(f"📊 Words extracted: {len(text.split())}")
+                return text
+            else:
+                st.error("❌ Could not extract text from PDF")
+                st.error("🔍 Possible reasons:")
+                st.error("  • PDF contains only images/scanned content (needs OCR)")
+                st.error("  • PDF is password protected or encrypted")
+                st.error("  • PDF file is corrupted or has invalid format")
+                st.error("  • Text is embedded as images rather than searchable text")
+                st.error("💡 Suggestions:")
+                st.error("  • Try converting the PDF to text format first")
+                st.error("  • Use an OCR tool for scanned documents")
+                st.error("  • Check if the PDF opens correctly in other applications")
+                st.error("  • Try uploading a different PDF file")
+                return ""
         except Exception as e:
-            st.warning(f"❌ PyMuPDF image extraction failed: {str(e)}")
-        return []
-    
-    @staticmethod
-    def extract_text_from_docx(file_content: bytes) -> str:
+            st.error(f"❌ Error processing PDF: {str(e)}")
+            return ""
         """Extract text from DOCX file"""
         text = ""
         try:
