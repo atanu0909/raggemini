@@ -1,9 +1,22 @@
-.env
-
 git checkout -b deploy-cloud
-git add .
-git commit -m "Prepare for Streamlit Cloud deployment"
-git push -u origin deploy-cloud# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.env
+secrets.toml
+*.sqlite3
+uploads/
+data/*.json
+.DS_Store
+*.log
+*.bak
+*.tmp
+*.swp
+.idea/
+.vscode/
+*.db
+*.egg-info/
 __pycache__/
 *.py[cod]
 *$py.class
