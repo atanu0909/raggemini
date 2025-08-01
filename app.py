@@ -1540,6 +1540,30 @@ try:
 except ImportError:
     PDF_EXPORT_AVAILABLE = False
 
+# Try to import PIL and google-generativeai
+try:
+    from PIL import Image
+    PIL_AVAILABLE = True
+except ImportError:
+    PIL_AVAILABLE = False
+
+try:
+    import google.generativeai as genai
+    GENAI_AVAILABLE = True
+except ImportError:
+    GENAI_AVAILABLE = False
+
+# Other imports
+import streamlit as st
+import os
+import json
+import time
+import random
+import tempfile
+import uuid
+import io
+import requests
+
 # Configuration
 st.set_page_config(
     page_title="Book Question Generator",
@@ -2341,77 +2365,318 @@ class PDFExporter:
 
 def main():
     """Main application function"""
-    # --- Custom UI ---
+    # --- Enhanced Custom UI ---
     st.markdown("""
         <style>
-        .atanu-header {
-            background: linear-gradient(90deg, #4e54c8 0%, #8f94fb 100%);
-            color: white;
-            padding: 24px 0 12px 0;
-            border-radius: 0 0 16px 16px;
-            text-align: center;
-            font-size: 2.2rem;
-            font-weight: bold;
-            letter-spacing: 2px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        /* Main app styling */
+        .main .block-container {
+            padding-top: 2rem;
+            padding-bottom: 2rem;
+            max-width: 1200px;
         }
-        .atanu-sub {
-            color: #222;
-            font-size: 1.1rem;
+        
+        /* Header styling */
+        .atanu-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 3rem 2rem 2rem 2rem;
+            border-radius: 20px;
             text-align: center;
+            margin-bottom: 2rem;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+            backdrop-filter: blur(10px);
+        }
+        
+        .atanu-title {
+            font-size: 3rem;
+            font-weight: 800;
+            margin-bottom: 0.5rem;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+        
+        .atanu-subtitle {
+            font-size: 1.2rem;
+            opacity: 0.9;
+            font-weight: 300;
+        }
+        
+        .atanu-author {
+            font-size: 1rem;
+            margin-top: 1rem;
+            padding: 0.5rem 1rem;
+            background: rgba(255,255,255,0.2);
+            border-radius: 25px;
+            display: inline-block;
+            backdrop-filter: blur(10px);
+        }
+        
+        /* Feature cards */
+        .feature-card {
+            background: linear-gradient(145deg, #ffffff 0%, #f8fafc 100%);
+            border-radius: 16px;
+            padding: 2rem;
+            margin: 1rem 0;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+            border: 1px solid rgba(255,255,255,0.8);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+        
+        .feature-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 30px rgba(0,0,0,0.12);
+        }
+        
+        .feature-icon {
+            font-size: 2.5rem;
+            margin-bottom: 1rem;
+            display: block;
+        }
+        
+        .feature-title {
+            font-size: 1.4rem;
+            font-weight: 700;
+            color: #2d3748;
+            margin-bottom: 0.8rem;
+        }
+        
+        .feature-desc {
+            color: #4a5568;
+            line-height: 1.6;
+            font-size: 1rem;
+        }
+        
+        /* Step cards */
+        .step-card {
+            background: linear-gradient(145deg, #f7fafc 0%, #edf2f7 100%);
+            border-left: 4px solid #667eea;
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin: 1rem 0;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        }
+        
+        .step-number {
+            background: #667eea;
+            color: white;
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            margin-right: 1rem;
+        }
+        
+        .step-title {
+            font-size: 1.2rem;
+            font-weight: 600;
+            color: #2d3748;
+            display: inline-block;
+        }
+        
+        /* Status indicators */
+        .status-good {
+            background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
+            color: white;
+            padding: 0.5rem 1rem;
+            border-radius: 20px;
+            font-weight: 600;
+            font-size: 0.9rem;
+            display: inline-block;
+            margin: 0.2rem;
+        }
+        
+        .status-error {
+            background: linear-gradient(135deg, #f56565 0%, #e53e3e 100%);
+            color: white;
+            padding: 0.5rem 1rem;
+            border-radius: 20px;
+            font-weight: 600;
+            font-size: 0.9rem;
+            display: inline-block;
+            margin: 0.2rem;
+        }
+        
+        .status-warning {
+            background: linear-gradient(135deg, #ed8936 0%, #dd6b20 100%);
+            color: white;
+            padding: 0.5rem 1rem;
+            border-radius: 20px;
+            font-weight: 600;
+            font-size: 0.9rem;
+            display: inline-block;
+            margin: 0.2rem;
+        }
+        
+        /* File upload area */
+        .upload-area {
+            background: linear-gradient(145deg, #f7fafc 0%, #edf2f7 100%);
+            border: 2px dashed #cbd5e0;
+            border-radius: 16px;
+            padding: 2rem;
+            text-align: center;
+            margin: 1rem 0;
+            transition: all 0.3s ease;
+        }
+        
+        .upload-area:hover {
+            border-color: #667eea;
+            background: linear-gradient(145deg, #edf2f7 0%, #e2e8f0 100%);
+        }
+        
+        /* Progress indicators */
+        .progress-container {
+            background: white;
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin: 1rem 0;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        }
+        
+        /* Dark mode support */
+        .atanu-dark .feature-card {
+            background: linear-gradient(145deg, #2d3748 0%, #1a202c 100%);
+            color: #e2e8f0;
+        }
+        
+        .atanu-dark .step-card {
+            background: linear-gradient(145deg, #2d3748 0%, #1a202c 100%);
+            color: #e2e8f0;
+        }
+        
+        .atanu-dark .upload-area {
+            background: linear-gradient(145deg, #2d3748 0%, #1a202c 100%);
+            border-color: #4a5568;
+            color: #e2e8f0;
+        }
+        
+        /* Sidebar styling */
+        .css-1d391kg {
+            padding-top: 2rem;
+        }
+        
+        /* Button styling */
+        .stButton > button {
+            border-radius: 12px;
+            border: none;
+            padding: 0.75rem 1.5rem;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+        
+        .stButton > button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        }
+        
+        /* Metrics styling */
+        .metric-card {
+            background: linear-gradient(145deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 1.5rem;
+            border-radius: 12px;
+            text-align: center;
+            margin: 0.5rem 0;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+        
+        .metric-value {
+            font-size: 2rem;
+            font-weight: 800;
             margin-bottom: 0.5rem;
         }
-        .atanu-guidelines {
-            background: #f7f7fa;
-            border-radius: 12px;
-            padding: 18px;
-            margin-bottom: 1.5rem;
-            box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+        
+        .metric-label {
+            font-size: 1rem;
+            opacity: 0.9;
         }
-        .atanu-dark .atanu-header { background: linear-gradient(90deg, #232526 0%, #414345 100%); color: #fff; }
-        .atanu-dark .atanu-guidelines { background: #232526; color: #eee; }
         </style>
     """, unsafe_allow_html=True)
 
-    # Dark/Light mode toggle
+    # Dark/Light mode toggle with enhanced styling
     if 'dark_mode' not in st.session_state:
         st.session_state.dark_mode = False
-    dark_mode = st.sidebar.checkbox("🌗 Dark Mode", value=st.session_state.dark_mode, key="dark_mode_toggle")
-    st.session_state.dark_mode = dark_mode
-    st.markdown(f'<div class="atanu-header {"atanu-dark" if dark_mode else ""}">Book Question Generator & Assessment<br><span style="font-size:1.2rem;font-weight:normal;">by ATANU GHOSH</span></div>', unsafe_allow_html=True)
-    st.markdown(f'<div class="atanu-sub {"atanu-dark" if dark_mode else ""}">Welcome! This platform is designed for students and educators to generate, take, and evaluate book-based questions with AI.</div>', unsafe_allow_html=True)
-
-    # Guidelines section (always visible, not in expander)
-    guidelines_class = "atanu-guidelines atanu-dark" if dark_mode else "atanu-guidelines"
-    guidelines_text_color = "#eee" if dark_mode else "#222"
+    
+    # Enhanced header with beautiful gradient
     st.markdown(f"""
-    <div class='{guidelines_class}'>
-    <ul style='color: {guidelines_text_color}; font-size: 1.08rem; font-weight: 500;'>
-    <li>Upload chapters in PDF, DOCX, or TXT format.</li>
-    <li>Select your subject for tailored evaluation (Maths, Chemistry, English, etc.).</li>
-    <li>Generate MCQ and subjective questions (1, 2, 3, 5 marks).</li>
-    <li>Answer via text, audio, or handwriting image (Gemini-powered OCR).</li>
-    <li>Take tests and get instant AI feedback and scoring.</li>
-    <li>Track your test history and performance.</li>
-    <li>All data is securely handled. API keys are never exposed.</li>
-    <li>Switch between Dark/Light mode for comfort.</li>
-    </ul>
+    <div class="atanu-header {'atanu-dark' if st.session_state.dark_mode else ''}">
+        <div class="atanu-title">📚 Book Question Generator</div>
+        <div class="atanu-subtitle">AI-Powered Learning & Assessment Platform</div>
+        <div class="atanu-author">Created by ATANU GHOSH</div>
     </div>
     """, unsafe_allow_html=True)
+    
+    # Welcome message and features overview
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.markdown("""
+        <div class="feature-card">
+            <div class="feature-icon">🎯</div>
+            <div class="feature-title">Smart Questions</div>
+            <div class="feature-desc">Generate MCQ and subjective questions from any document with AI precision</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col2:
+        st.markdown("""
+        <div class="feature-card">
+            <div class="feature-icon">🎤</div>
+            <div class="feature-title">Multi-Modal Input</div>
+            <div class="feature-desc">Answer via text, voice recording, or handwritten images with OCR</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col3:
+        st.markdown("""
+        <div class="feature-card">
+            <div class="feature-icon">📊</div>
+            <div class="feature-title">Smart Evaluation</div>
+            <div class="feature-desc">Get instant feedback and detailed performance analytics</div>
+        </div>
+        """, unsafe_allow_html=True)
 
-    # Sidebar navigation
-    st.sidebar.title("Navigation")
+    # Enhanced Sidebar navigation
+    st.sidebar.markdown("""
+    <div style="text-align: center; padding: 1rem 0;">
+        <h2 style="color: #667eea; margin-bottom: 0.5rem;">🧭 Navigation</h2>
+        <p style="color: #4a5568; font-size: 0.9rem;">Choose your learning path</p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Dark mode toggle in sidebar
+    dark_mode = st.sidebar.checkbox("🌗 Dark Mode", value=st.session_state.dark_mode, key="dark_mode_toggle")
+    st.session_state.dark_mode = dark_mode
+    
     st.sidebar.markdown("---")
+    
+    # AI Model selection with better styling
     if 'model_choice' not in st.session_state:
         st.session_state.model_choice = "Mistral"
+    
+    st.sidebar.markdown("### 🤖 AI Model")
     st.session_state.model_choice = st.sidebar.selectbox(
-        "Select AI Model",
+        "Choose your AI assistant",
         ["Mistral", "Gemini"],
-        index=0 if st.session_state.model_choice == "Mistral" else 1
+        index=0 if st.session_state.model_choice == "Mistral" else 1,
+        help="Select the AI model for question generation and evaluation"
     )
+    
+    # Model info
+    if st.session_state.model_choice == "Mistral":
+        st.sidebar.info("🚀 Mistral: Fast and efficient for most tasks")
+    else:
+        st.sidebar.info("✨ Gemini: Advanced capabilities with image support")
+    
+    st.sidebar.markdown("---")
+    
+    # Page selection with icons and descriptions
+    st.sidebar.markdown("### 📋 Learning Modules")
     page = st.sidebar.selectbox(
-        "Select Page",
-        ["📁 Upload & Generate", "⚙️ Configure Test", "✍️ Take Test", "📊 Results"]
+        "Select Module",
+        ["📁 Upload & Generate", "⚙️ Configure Test", "✍️ Take Test", "📊 Results"],
+        help="Navigate through different learning modules"
     )
 
     # Page routing
@@ -2425,57 +2690,137 @@ def main():
         results_page()
 
 def upload_and_generate_page():
-    """Upload and question generation page"""
-    st.header("📁 Upload & Generate Questions")
-    # --- User Identification for History ---
+    """Enhanced Upload and question generation page with beautiful UI"""
+    
+    # Page header with gradient
     st.markdown("""
-    <div style='background:#f7f7fa; border-radius:10px; padding:18px; margin-bottom:1.2rem; box-shadow:0 1px 4px rgba(0,0,0,0.04);'>
-        <span style='font-size:1.15rem; color:#4e54c8; font-weight:600;'>Step 0: Enter Your Name (for history)</span>
+    <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+                color: white; padding: 2rem; border-radius: 16px; margin-bottom: 2rem;
+                box-shadow: 0 4px 20px rgba(0,0,0,0.1);">
+        <h1 style="margin: 0; font-size: 2.5rem; text-align: center;">📁 Upload & Generate Questions</h1>
+        <p style="margin: 1rem 0 0 0; text-align: center; font-size: 1.2rem; opacity: 0.9;">
+            Transform your documents into interactive learning experiences
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # User identification section with modern styling
+    st.markdown("""
+    <div class="step-card">
+        <span class="step-number">👤</span>
+        <span class="step-title">User Identification</span>
+        <p style="margin-top: 1rem; color: #4a5568;">Enter your details to save and access your learning history</p>
     </div>
     """, unsafe_allow_html=True)
     def set_username():
         st.session_state["username"] = st.session_state.get("username", "")
-    username = st.text_input(
-        "Enter your name or ID (for saving and loading history)",
-        value=st.session_state.get("username", ""),
-        key="username",
-        on_change=set_username
-    )
-    if not username:
-        st.info("Please enter your name to enable history features.")
+    
+    col1, col2 = st.columns([2, 1])
+    with col1:
+        username = st.text_input(
+            "🏷️ Your Name or Student ID",
+            value=st.session_state.get("username", ""),
+            key="username",
+            on_change=set_username,
+            placeholder="Enter your name or student ID...",
+            help="This helps us save your progress and questions for future reference"
+        )
+    with col2:
+        if username:
+            st.markdown(f"""
+            <div style="background: linear-gradient(135deg, #48bb78 0%, #38a169 100%); 
+                        color: white; padding: 1rem; border-radius: 12px; margin-top: 1.7rem; text-align: center;">
+                <strong>✅ Welcome, {username}!</strong>
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            st.markdown("""
+            <div style="background: linear-gradient(135deg, #ed8936 0%, #dd6b20 100%); 
+                        color: white; padding: 1rem; border-radius: 12px; margin-top: 1.7rem; text-align: center;">
+                <strong>⚠️ Name Required</strong>
+            </div>
+            """, unsafe_allow_html=True)
 
-    # --- Load Previous History ---
+    # Enhanced Previous History Section
     import os, json
     history_dir = os.path.join("data")
     history_file = os.path.join(history_dir, f"questions_{username}.json") if username else None
-    if username and os.path.exists(history_file):
-        with st.expander(f"� Load Previous Questions for {username}", expanded=False):
-            with open(history_file, "r", encoding="utf-8") as f:
-                user_history = json.load(f)
-            if user_history:
-                st.success(f"Found {len(user_history)} previous questions.")
-                for i, q in enumerate(user_history, 1):
-                    st.markdown(f"**Q{i}:** {q.get('text','')} <br> <span style='color:#888;'>Type: {q.get('type','')}, Marks: {q.get('marks','')}</span>", unsafe_allow_html=True)
-            else:
-                st.info("No previous questions found.")
-    elif username:
-        st.info("No previous history found for this user.")
     
-    # Show system status
-    with st.expander("�🔧 System Status"):
+    if username and os.path.exists(history_file):
+        with st.expander(f"📚 Your Learning History - {username}", expanded=False):
+            try:
+                with open(history_file, "r", encoding="utf-8") as f:
+                    user_history = json.load(f)
+                if user_history:
+                    st.markdown(f"""
+                    <div style="background: linear-gradient(135deg, #4299e1 0%, #3182ce 100%); 
+                                color: white; padding: 1rem; border-radius: 12px; margin-bottom: 1rem; text-align: center;">
+                        <h4 style="margin: 0;">📊 Found {len(user_history)} Previous Questions</h4>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    for i, q in enumerate(user_history[:5], 1):  # Show only first 5
+                        st.markdown(f"""
+                        <div style="background: #f7fafc; border-left: 4px solid #4299e1; 
+                                    padding: 1rem; margin: 0.5rem 0; border-radius: 0 8px 8px 0;">
+                            <strong>Q{i}:</strong> {q.get('text', '')[:100]}{'...' if len(q.get('text', '')) > 100 else ''}<br>
+                            <small style="color: #718096;">Type: {q.get('type', '').replace('_', ' ').title()} | Marks: {q.get('marks', '')}</small>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    
+                    if len(user_history) > 5:
+                        st.info(f"And {len(user_history) - 5} more questions...")
+                else:
+                    st.info("📝 No previous questions found. Start by generating some!")
+            except Exception as e:
+                st.error(f"Error loading history: {str(e)}")
+    elif username:
+        st.info("🆕 New user detected. Your questions will be saved for future reference!")
+    
+    st.markdown("<br>", unsafe_allow_html=True)
+    
+    # Enhanced System Status Section
+    with st.expander("🔧 System Status & Capabilities", expanded=False):
         col1, col2, col3 = st.columns(3)
         with col1:
-            st.write("**PDF Processing:**")
+            st.markdown("""
+            <div style="text-align: center; padding: 1rem; background: #f7fafc; border-radius: 12px;">
+                <h4 style="color: #2d3748; margin: 0 0 0.5rem 0;">📄 PDF Processing</h4>
+            """, unsafe_allow_html=True)
             if PYPDF2_AVAILABLE:
-                st.success("✅ PyPDF2 Available")
+                st.markdown('<div class="status-good">✅ PyPDF2 Ready</div>', unsafe_allow_html=True)
             else:
-                st.error("❌ PyPDF2 Not Available")
+                st.markdown('<div class="status-error">❌ PyPDF2 Missing</div>', unsafe_allow_html=True)
             
             if PYPDF_AVAILABLE:
                 pypdf_version = "old pyPdf" if hasattr(pypdf, 'PdfFileReader') else "new pypdf"
-                st.success(f"✅ pypdf Available ({pypdf_version})")
+                st.markdown(f'<div class="status-good">✅ pypdf Ready ({pypdf_version})</div>', unsafe_allow_html=True)
             else:
-                st.error("❌ pypdf Not Available")
+                st.markdown('<div class="status-error">❌ pypdf Missing</div>', unsafe_allow_html=True)
+            st.markdown("</div>", unsafe_allow_html=True)
+        
+        with col2:
+            st.markdown("""
+            <div style="text-align: center; padding: 1rem; background: #f7fafc; border-radius: 12px;">
+                <h4 style="color: #2d3748; margin: 0 0 0.5rem 0;">📝 Document Support</h4>
+            """, unsafe_allow_html=True)
+            if DOCX_AVAILABLE:
+                st.markdown('<div class="status-good">✅ DOCX Ready</div>', unsafe_allow_html=True)
+            else:
+                st.markdown('<div class="status-error">❌ DOCX Missing</div>', unsafe_allow_html=True)
+            st.markdown('<div class="status-good">✅ TXT Ready</div>', unsafe_allow_html=True)
+            st.markdown("</div>", unsafe_allow_html=True)
+        
+        with col3:
+            st.markdown("""
+            <div style="text-align: center; padding: 1rem; background: #f7fafc; border-radius: 12px;">
+                <h4 style="color: #2d3748; margin: 0 0 0.5rem 0;">🎤 Audio Features</h4>
+            """, unsafe_allow_html=True)
+            if AUDIO_AVAILABLE:
+                st.markdown('<div class="status-good">✅ Audio Ready</div>', unsafe_allow_html=True)
+            else:
+                st.markdown('<div class="status-warning">⚠️ Audio Limited</div>', unsafe_allow_html=True)
+            st.markdown("</div>", unsafe_allow_html=True)
     st.markdown("""
     <div style='background: linear-gradient(90deg, #4e54c8 0%, #8f94fb 100%); color: white; padding: 18px 0 8px 0; border-radius: 0 0 12px 12px; text-align: center; font-size: 1.7rem; font-weight: bold; letter-spacing: 1px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); margin-bottom: 0.5rem;'>
         <span style='font-size:2.2rem;'>📁 Upload & Generate Questions</span>
@@ -2513,43 +2858,94 @@ def upload_and_generate_page():
             else:
                 st.warning("⚠️ Not available")
 
+    # Enhanced Subject Selection
     st.markdown("""
-    <div style='background:#f7f7fa; border-radius:10px; padding:18px; margin-bottom:1.2rem; box-shadow:0 1px 4px rgba(0,0,0,0.04);'>
-        <span style='font-size:1.15rem; color:#4e54c8; font-weight:600;'>Step 1: Select Subject</span>
+    <div class="step-card">
+        <span class="step-number">1</span>
+        <span class="step-title">Choose Your Subject</span>
+        <p style="margin-top: 1rem; color: #4a5568;">Select the subject area for tailored question generation and evaluation</p>
     </div>
     """, unsafe_allow_html=True)
+    
     subject_options = [
-        "English", "Chemistry", "Physics", "Geography", "Economics", "Maths", "Computer", "Story/Fables", "Newspaper", "General Knowledge", "History"
+        "📚 English", "🧪 Chemistry", "⚡ Physics", "🗺️ Geography", 
+        "📈 Economics", "🔢 Maths", "💻 Computer", "📖 Story/Fables", 
+        "📰 Newspaper", "🌟 General Knowledge", "🏛️ History"
     ]
-    st.selectbox(
-        "Which subject are you uploading?",
-        subject_options,
-        key="selected_subject"
-    )
-
+    
+    col1, col2 = st.columns([2, 1])
+    with col1:
+        selected_subject = st.selectbox(
+            "Which subject are you uploading?",
+            subject_options,
+            key="selected_subject",
+            help="Choose the subject to get subject-specific evaluation and feedback"
+        )
+    with col2:
+        subject_emoji = selected_subject.split()[0] if selected_subject else "📚"
+        st.markdown(f"""
+        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+                    color: white; padding: 1.5rem; border-radius: 12px; margin-top: 1.7rem; text-align: center;">
+            <div style="font-size: 2rem;">{subject_emoji}</div>
+            <div style="font-size: 0.9rem; margin-top: 0.5rem;">Subject Selected</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    st.markdown("<br>", unsafe_allow_html=True)
+    
+    # Enhanced File Upload Section
     st.markdown("""
-    <div style='background:#f7f7fa; border-radius:10px; padding:18px; margin-bottom:1.2rem; box-shadow:0 1px 4px rgba(0,0,0,0.04);'>
-        <span style='font-size:1.15rem; color:#4e54c8; font-weight:600;'>Step 2: Upload Your File</span>
+    <div class="step-card">
+        <span class="step-number">2</span>
+        <span class="step-title">Upload Your Document</span>
+        <p style="margin-top: 1rem; color: #4a5568;">Upload your book chapter, notes, or study material</p>
     </div>
     """, unsafe_allow_html=True)
+    # Enhanced file uploader with drag-and-drop styling
+    st.markdown("""
+    <div class="upload-area">
+        <div style="font-size: 3rem; margin-bottom: 1rem;">📁</div>
+        <h4 style="margin: 0 0 0.5rem 0; color: #2d3748;">Drag & Drop Your File Here</h4>
+        <p style="margin: 0; color: #718096;">Supports PDF, DOCX, and TXT files up to 10MB</p>
+    </div>
+    """, unsafe_allow_html=True)
+    
     uploaded_file = st.file_uploader(
-        "Choose a file (PDF, DOCX, or TXT)",
+        "Choose a file",
         type=['pdf', 'docx', 'txt'],
-        help="Upload your book chapter (PDF, DOCX, or TXT format)"
+        help="📄 PDF: Extract text from documents\n📝 DOCX: Microsoft Word documents\n📰 TXT: Plain text files",
+        label_visibility="collapsed"
     )
-
-    st.markdown("---")
-    st.subheader("🧪 Test with Sample Text")
-    if st.button("📝 Use Sample Text"):
-        sample_text = """
-        The history of artificial intelligence (AI) began in antiquity, with myths, stories and rumors of artificial beings endowed with intelligence or consciousness by master craftsmen. The seeds of modern AI were planted by classical philosophers who attempted to describe the process of human thinking as the mechanical manipulation of symbols. This work culminated in the invention of the programmable digital computer in the 1940s, a machine based on the abstract essence of mathematical reasoning. This device and the ideas behind it inspired a handful of scientists to begin seriously discussing the possibility of building an electronic brain.
-        
-        The field of AI research was born at a workshop at Dartmouth College in 1956, where the term "artificial intelligence" was coined. The participants of this workshop predicted that machines would soon be able to perform any intellectual task that a human being could do. This optimism, however, was short-lived. The early years of AI were characterized by both remarkable achievements and significant setbacks.
-        
-        Machine learning, a subset of AI, focuses on the development of algorithms that can learn and improve from experience without being explicitly programmed. This approach has become increasingly important in recent years, with applications ranging from image recognition to natural language processing.
-        """
-        st.session_state.sample_text = sample_text
-        st.success("✅ Sample text loaded! You can now generate questions.")
+    
+    # Enhanced Sample Text Section
+    st.markdown("<br>", unsafe_allow_html=True)
+    
+    st.markdown("""
+    <div style="background: linear-gradient(135deg, #ed8936 0%, #dd6b20 100%); 
+                color: white; padding: 1.5rem; border-radius: 16px; text-align: center; margin: 2rem 0;">
+        <h3 style="margin: 0 0 0.5rem 0;">🧪 Try with Sample Content</h3>
+        <p style="margin: 0; opacity: 0.9;">Don't have a file? Test the system with our AI sample text</p>
+    </div>
+    """, unsafe_allow_html=True)
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        if st.button("� Load Sample AI Text", type="primary", use_container_width=True):
+            sample_text = """
+            The history of artificial intelligence (AI) began in antiquity, with myths, stories and rumors of artificial beings endowed with intelligence or consciousness by master craftsmen. The seeds of modern AI were planted by classical philosophers who attempted to describe the process of human thinking as the mechanical manipulation of symbols. This work culminated in the invention of the programmable digital computer in the 1940s, a machine based on the abstract essence of mathematical reasoning. This device and the ideas behind it inspired a handful of scientists to begin seriously discussing the possibility of building an electronic brain.
+            
+            The field of AI research was born at a workshop at Dartmouth College in 1956, where the term "artificial intelligence" was coined. The participants of this workshop predicted that machines would soon be able to perform any intellectual task that a human being could do. This optimism, however, was short-lived. The early years of AI were characterized by both remarkable achievements and significant setbacks.
+            
+            Machine learning, a subset of AI, focuses on the development of algorithms that can learn and improve from experience without being explicitly programmed. This approach has become increasingly important in recent years, with applications ranging from image recognition to natural language processing.
+            """
+            st.session_state.sample_text = sample_text
+            
+            st.markdown("""
+            <div style="background: linear-gradient(135deg, #48bb78 0%, #38a169 100%); 
+                        color: white; padding: 1rem; border-radius: 12px; margin: 1rem 0; text-align: center;">
+                <h4 style="margin: 0;">✅ Sample Text Loaded Successfully!</h4>
+                <p style="margin: 0.5rem 0 0 0;">You can now generate questions from this AI content</p>
+            </div>
+            """, unsafe_allow_html=True)
         with st.expander("📖 Sample Text Preview", expanded=True):
             st.text_area("Sample Text", sample_text, height=200)
         st.subheader("Generate Questions from Sample Text")
