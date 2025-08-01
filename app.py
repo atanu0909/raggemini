@@ -2598,6 +2598,14 @@ def main():
     if 'dark_mode' not in st.session_state:
         st.session_state.dark_mode = False
     
+    # Initialize session state variables
+    if 'questions' not in st.session_state:
+        st.session_state.questions = []
+    if 'test_results' not in st.session_state:
+        st.session_state.test_results = []
+    if 'test_active' not in st.session_state:
+        st.session_state.test_active = False
+    
     # Enhanced header with beautiful gradient
     st.markdown(f"""
     <div class="atanu-header {'atanu-dark' if st.session_state.dark_mode else ''}">
@@ -2929,7 +2937,7 @@ def upload_and_generate_page():
     """, unsafe_allow_html=True)
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        if st.button("� Load Sample AI Text", type="primary", use_container_width=True):
+        if st.button("🚀 Load Sample AI Text", type="primary", use_container_width=True):
             sample_text = """
             The history of artificial intelligence (AI) began in antiquity, with myths, stories and rumors of artificial beings endowed with intelligence or consciousness by master craftsmen. The seeds of modern AI were planted by classical philosophers who attempted to describe the process of human thinking as the mechanical manipulation of symbols. This work culminated in the invention of the programmable digital computer in the 1940s, a machine based on the abstract essence of mathematical reasoning. This device and the ideas behind it inspired a handful of scientists to begin seriously discussing the possibility of building an electronic brain.
             
@@ -2946,8 +2954,11 @@ def upload_and_generate_page():
                 <p style="margin: 0.5rem 0 0 0;">You can now generate questions from this AI content</p>
             </div>
             """, unsafe_allow_html=True)
+    
+    # Show sample text preview and generation options if sample text is loaded
+    if st.session_state.get('sample_text'):
         with st.expander("📖 Sample Text Preview", expanded=True):
-            st.text_area("Sample Text", sample_text, height=200)
+            st.text_area("Sample Text", st.session_state.get('sample_text', ''), height=200)
         st.subheader("Generate Questions from Sample Text")
         col1, col2 = st.columns(2)
         with col1:
@@ -2966,14 +2977,16 @@ def upload_and_generate_page():
                 total_types = len(question_types)
                 for i, q_type in enumerate(question_types):
                     with st.spinner(f"Generating {q_type} questions..."):
-                        pass
+                        questions = AIModelAPI.generate_questions(st.session_state.sample_text, q_type, num_questions, st.session_state.model_choice)
+                        all_questions.extend(questions)
                     progress_bar.progress((i + 1) / total_types)
                 st.session_state.questions = all_questions
                 if all_questions:
                     st.success(f"✅ Generated {len(all_questions)} questions!")
                     st.subheader("Generated Questions Summary")
                     for q_type in question_types:
-                        pass
+                        type_questions = [q for q in all_questions if q.type == q_type]
+                        st.write(f"**{q_type.replace('_', ' ').title()}**: {len(type_questions)} questions")
                 else:
                     st.error("❌ Failed to generate questions. Please try again.")
             else:
@@ -3405,3 +3418,5 @@ def results_page():
 
 if __name__ == "__main__":
     main()
+
+
