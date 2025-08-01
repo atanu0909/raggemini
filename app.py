@@ -1553,6 +1553,60 @@ try:
 except ImportError:
     GENAI_AVAILABLE = False
 
+# Try to import PIL
+try:
+    from PIL import Image
+    PIL_AVAILABLE = True
+except ImportError:
+    PIL_AVAILABLE = False
+
+# External libraries for document processing and audio
+try:
+    import PyPDF2
+    PYPDF2_AVAILABLE = True
+except ImportError:
+    PYPDF2_AVAILABLE = False
+
+try:
+    import pypdf
+    PYPDF_AVAILABLE = True
+except ImportError:
+    PYPDF_AVAILABLE = False
+
+# For older pypdf versions, try alternative import
+if not PYPDF_AVAILABLE:
+    try:
+        import pyPdf as pypdf
+        PYPDF_AVAILABLE = True
+    except ImportError:
+        PYPDF_AVAILABLE = False
+
+PDF_AVAILABLE = PYPDF2_AVAILABLE or PYPDF_AVAILABLE
+
+try:
+    from docx import Document
+    DOCX_AVAILABLE = True
+except ImportError:
+    DOCX_AVAILABLE = False
+
+try:
+    from gtts import gTTS
+    import speech_recognition as sr
+    from audio_recorder_streamlit import audio_recorder
+    import tempfile
+    import wave
+    from pydub import AudioSegment
+    from pydub.utils import make_chunks
+    AUDIO_AVAILABLE = True
+except ImportError:
+    AUDIO_AVAILABLE = False
+
+try:
+    from fpdf import FPDF
+    PDF_EXPORT_AVAILABLE = True
+except ImportError:
+    PDF_EXPORT_AVAILABLE = False
+
 # Other imports
 import streamlit as st
 import os
